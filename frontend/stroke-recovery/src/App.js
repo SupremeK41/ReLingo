@@ -2,36 +2,12 @@ import React from 'react';
 import './App.css';
 import logo from './logo2.png';
 import womanTree from './WomanTree2.png';
-import { BrowserRouter as Router, Route, Routes ,useNavigate} from 'react-router-dom';
-import AboutUs from './aboutus';
+import { useNavigate, Routes, Route } from 'react-router-dom';
+import AboutUs from './components/AboutUs';
 
-
-function App() {
-  const handleHomeClick = () => {
-    window.location.reload();
-  };
-  const navigate = useNavigate();
-  <Router>
-    <Routes>
-      <Route path="/" element={<App />} />
-      <Route path="/aboutus" element={<AboutUs />} />
-    </Routes>
-  </Router>
-
+function MainContent() {
   return (
-    <div className="App">
-      <nav className="navbar">
-        <div className="logo-container" onClick={handleHomeClick} style={{cursor: 'pointer'}}>
-          <img src={logo} alt="ReLingo Logo" className="logo" />
-          <h1>ReLingo</h1>
-        </div>
-        <div className="nav-links">
-          <button onClick={handleHomeClick}>Home</button>
-          <button onClick ={() => navigate('/aboutus')}>About Us</button>
-          <button>Start Learning</button>
-        </div>
-      </nav>
-
+    <>
       <main className="main-content">
         <h1 className="welcome-text">Welcome to ReLingo</h1>
         
@@ -46,6 +22,39 @@ function App() {
       </main>
       
       <img src={womanTree} alt="Woman and Tree Illustration" className="woman-tree-illustration" />
+    </>
+  );
+}
+
+function App() {
+  const navigate = useNavigate();
+
+  const handleHomeClick = () => {
+    navigate('/');
+  };
+
+  const handleAboutClick = () => {
+    navigate('/about');
+  };
+
+  return (
+    <div className="App">
+      <nav className="navbar">
+        <div className="logo-container" onClick={handleHomeClick} style={{cursor: 'pointer'}}>
+          <img src={logo} alt="ReLingo Logo" className="logo" />
+          <h1>ReLingo</h1>
+        </div>
+        <div className="nav-links">
+          <button onClick={handleHomeClick}>Home</button>
+          <button onClick={handleAboutClick}>About Us</button>
+          <button>Start Learning</button>
+        </div>
+      </nav>
+
+      <Routes>
+        <Route path="/" element={<MainContent />} />
+        <Route path="/about" element={<AboutUs />} />
+      </Routes>
     </div>
   );
 }
