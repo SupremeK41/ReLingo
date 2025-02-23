@@ -1,0 +1,145 @@
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap');
+
+.App {
+  text-align: center;
+  padding: 20px;
+  background: linear-gradient(to right, #666666, white);
+  min-height: 100vh;
+  font-family: 'EB Garamond', serif;
+  position: relative;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  margin-bottom: 4rem;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding-top: 0.5rem;
+}
+
+.logo {
+  width: 75px;
+  height: 75px;
+  display: block;
+  margin: auto 0;
+}
+
+.logo-container h1 {
+  font-family: 'EB Garamond', serif;
+  font-weight: 600;
+  font-size: 3rem;
+  margin: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  height: 75px;
+}
+
+.nav-links {
+  display: flex;
+  gap: 20px;
+}
+
+.nav-links button {
+  background-color: #1a1a1a;
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  border-radius: 25px;
+  cursor: pointer;
+  font-size: 1.2rem;
+  font-family: 'EB Garamond', serif;
+}
+
+.welcome-text {
+  font-size: 4.5rem;
+  margin-bottom: 4rem;
+  margin-top: -2rem;
+}
+
+.cta-button {
+  font-family: 'EB Garamond', serif;
+  background-color: #1a1a1a;
+  color: white;
+  border: none;
+  padding: 30px 60px;
+  border-radius: 15px;
+  font-size: 2.5rem;
+  cursor: pointer;
+  margin: 4rem 0 6rem 0;
+}
+
+.tagline-section {
+  text-align: left;
+  padding-left: 2%;
+  margin-top: 4rem;
+}
+
+.tagline {
+  font-size: 3.5rem;
+  margin-bottom: 1rem;
+}
+
+.sub-tagline {
+  font-size: 3rem;
+  font-weight: normal;
+}
+
+.woman-tree-illustration {
+  position: absolute;
+  bottom: 0%;
+  right: 0%;
+  height: 65vh;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.main-content {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
