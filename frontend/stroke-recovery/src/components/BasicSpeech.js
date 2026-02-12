@@ -1,12 +1,10 @@
-// frontend/src/components/BasicSpeech.js (or wherever yours lives)
+// frontend/src/components/BasicSpeech.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import "../App.css";
 import "./BasicSpeech.css";
 
-// ✅ JSON dataset (adjust path to where you created it)
 import wordPairs from "../data/wordPairs.json";
 
-// How many items per practice session
 const SESSION_SIZE = 10;
 
 function shuffle(arr) {
@@ -19,12 +17,21 @@ function shuffle(arr) {
 }
 
 function normalize(text = "") {
-  // lower + remove punctuation + collapse spaces
   return text
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// ✅ light singularization to accept plural forms like "mountains" for "mountain"
+// while still rejecting substrings like "car" in "carcinerate"
+function singularize(word = "") {
+  if (!word) return word;
+  if (word.endsWith("ies") && word.length > 3) return word.slice(0, -3) + "y"; // babies -> baby
+  if (word.endsWith("es") && word.length > 2) return word.slice(0, -2);        // boxes -> box, buses -> bus
+  if (word.endsWith("s") && word.length > 1) return word.slice(0, -1);         // mountains -> mountain
+  return word;
 }
 
 export default function BasicSpeech() {
@@ -41,7 +48,6 @@ export default function BasicSpeech() {
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
 
-  // ✅ Randomize once per page load
   const sessionWords = useMemo(() => {
     const shuffled = shuffle(wordPairs);
     return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
@@ -50,7 +56,6 @@ export default function BasicSpeech() {
   const currentItem = sessionWords[currentIndex];
 
   useEffect(() => {
-    // reset state if sessionWords changes (rare)
     setCurrentIndex(0);
     setScore(0);
     setFeedback("");
@@ -58,39 +63,39 @@ export default function BasicSpeech() {
     setCompleted(false);
   }, [sessionWords]);
 
-const checkWord = (transcribedText) => {
-  const transcript = normalize(transcribedText);
-  const target = normalize(currentItem?.word || "");
+  const checkWord = (transcribedText) => {
+    const transcript = normalize(transcribedText);
+    const target = normalize(currentItem?.word || "");
 
-  console.log("🎯 Target word:", target);
-  console.log("🗣️ Transcribed:", transcript);
+    console.log("🎯 Target word:", target);
+    console.log("🗣️ Transcribed:", transcript);
 
-  // Split transcript into words
-  const words = transcript.split(" ");
+    // Split transcript into words, singularize each, then compare to target
+    const words = transcript.split(" ").filter(Boolean);
+    const normalizedWords = words.map(singularize);
 
-const isCorrect = words.some(word => word === target);
+    const isCorrect = normalizedWords.includes(target);
 
-  if (isCorrect) {
-    setFeedback("Correct!");
-    setScore(prev => prev + 1);
-  } else {
-    setFeedback("Incorrect!");
-  }
-
-  setTimeout(() => {
-    const nextIndex = currentIndex + 1;
-
-    if (nextIndex < sessionWords.length) {
-      setCurrentIndex(nextIndex);
-      setFeedback("");
-      setAudioResult("");
+    if (isCorrect) {
+      setFeedback("Correct!");
+      setScore((prev) => prev + 1);
     } else {
-      setCompleted(true);
-      setFeedback("Practice completed!");
+      setFeedback("Incorrect!");
     }
-  }, 1500);
-};
 
+    setTimeout(() => {
+      const nextIndex = currentIndex + 1;
+
+      if (nextIndex < sessionWords.length) {
+        setCurrentIndex(nextIndex);
+        setFeedback("");
+        setAudioResult("");
+      } else {
+        setCompleted(true);
+        setFeedback("Practice completed!");
+      }
+    }, 1500);
+  };
 
   const startRecording = async () => {
     try {
@@ -109,13 +114,10 @@ const isCorrect = words.some(word => word === target);
 
       mediaRecorder.onstop = async () => {
         try {
-          // NOTE: Browser often records as webm/ogg internally even if you name it .wav
-          // Whisper (local) can still handle it via ffmpeg, but we keep it simple:
           const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" });
           console.log("🎤 Blob size:", audioBlob.size);
           await handleUpload(audioBlob);
         } finally {
-          // release mic
           stream.getTracks().forEach((t) => t.stop());
           streamRef.current = null;
         }
@@ -137,7 +139,6 @@ const isCorrect = words.some(word => word === target);
 
   const handleUpload = async (audioBlob) => {
     const formData = new FormData();
-    // name can be anything; backend just saves & transcribes
     formData.append("audio", audioBlob, "recording.webm");
 
     try {
@@ -159,7 +160,6 @@ const isCorrect = words.some(word => word === target);
     }
   };
 
-  // ✅ Safety: show loading if dataset empty
   if (!sessionWords.length) {
     return (
       <div className="basic-speech-content">
@@ -179,7 +179,8 @@ const isCorrect = words.some(word => word === target);
 
         <div style={{ marginTop: 10 }}>
           <strong>
-            Progress: {Math.min(currentIndex + (completed ? 0 : 1), sessionWords.length)}/
+            Progress:{" "}
+            {Math.min(currentIndex + (completed ? 0 : 1), sessionWords.length)}/
             {sessionWords.length}
           </strong>
           <span style={{ marginLeft: 12 }}>
@@ -191,7 +192,6 @@ const isCorrect = words.some(word => word === target);
           <div className="practice-card">
             {!completed && currentItem && (
               <div className="image-container">
-                {/* ✅ Uses public/images */}
                 <img
                   src={`/images/${currentItem.image}`}
                   alt={currentItem.word}
@@ -219,7 +219,11 @@ const isCorrect = words.some(word => word === target);
             )}
 
             {feedback && (
-              <div className={`feedback-message ${feedback.toLowerCase().replace("!", "")}`}>
+              <div
+                className={`feedback-message ${feedback
+                  .toLowerCase()
+                  .replace("!", "")}`}
+              >
                 {feedback}
               </div>
             )}
