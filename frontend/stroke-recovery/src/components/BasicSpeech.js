@@ -24,7 +24,6 @@ function normalize(text = "") {
     .trim();
 }
 
-// ✅ light singularization: mountains -> mountain, babies -> baby, buses -> bus
 function singularize(word = "") {
   if (!word) return word;
   if (word.endsWith("ies") && word.length > 3) return word.slice(0, -3) + "y";
@@ -33,7 +32,6 @@ function singularize(word = "") {
   return word;
 }
 
-// ✅ Levenshtein distance to tolerate small ASR mistakes (sun->son)
 function levenshtein(a = "", b = "") {
   if (a === b) return 0;
   const matrix = Array.from({ length: b.length + 1 }, () =>
@@ -56,31 +54,26 @@ function levenshtein(a = "", b = "") {
       }
     }
   }
-
   return matrix[b.length][a.length];
 }
 
-// ✅ Tolerance rule: exact word match OR plural match OR small edit distance
 function isMatch(word, target) {
   if (!word || !target) return false;
 
-  // Exact
-  if (word === target) return true;
+  const w = singularize(word);
 
-  // Plural tolerance
-  if (singularize(word) === target) return true;
+  if (w === target) return true;
 
-  // Small ASR error tolerance (sun/son, nose/noise etc.)
-  const dist = levenshtein(word, target);
-
-  // Make threshold depend on word length (safer)
-  const maxDist = target.length <= 4 ? 1 : 2;
-
+  const dist = levenshtein(w, target);
+  const maxDist = target.length <= 4 ? 1 : 2; // tolerate small ASR errors
   return dist <= maxDist;
 }
 
 export default function BasicSpeech() {
   const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // ✅ blocks double runs
+  const [lockedUntilNext, setLockedUntilNext] = useState(false); // ✅ prevents recording twice for same word
+
   const [audioResult, setAudioResult] = useState("");
   const [error, setError] = useState(null);
 
@@ -93,20 +86,43 @@ export default function BasicSpeech() {
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
 
+  // ✅ Create a session "seed" we can refresh without reloading the page
+  const [sessionSeed, setSessionSeed] = useState(0);
+
   const sessionWords = useMemo(() => {
     const shuffled = shuffle(wordPairs);
     return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
-  }, []);
+  }, [sessionSeed]);
 
   const currentItem = sessionWords[currentIndex];
 
   useEffect(() => {
+    // reset state when session changes
     setCurrentIndex(0);
     setScore(0);
     setFeedback("");
     setAudioResult("");
     setCompleted(false);
+    setError(null);
+    setIsRecording(false);
+    setIsProcessing(false);
+    setLockedUntilNext(false);
   }, [sessionWords]);
+
+  const nextItem = () => {
+    const nextIndex = currentIndex + 1;
+
+    if (nextIndex < sessionWords.length) {
+      setCurrentIndex(nextIndex);
+      setFeedback("");
+      setAudioResult("");
+      setError(null);
+      setLockedUntilNext(false);
+    } else {
+      setCompleted(true);
+      setFeedback("Practice completed!");
+    }
+  };
 
   const checkWord = (transcribedText) => {
     const transcript = normalize(transcribedText);
@@ -115,7 +131,6 @@ export default function BasicSpeech() {
     console.log("🎯 Target word:", target);
     console.log("🗣️ Transcribed:", transcript);
 
-    // Split transcript into words (prevents substring matches like car in carcinerate)
     const words = transcript.split(" ").filter(Boolean);
 
     const isCorrect = words.some((w) => isMatch(w, target));
@@ -127,21 +142,16 @@ export default function BasicSpeech() {
       setFeedback("Incorrect!");
     }
 
+    // ✅ short delay for clean UX transition
     setTimeout(() => {
-      const nextIndex = currentIndex + 1;
-
-      if (nextIndex < sessionWords.length) {
-        setCurrentIndex(nextIndex);
-        setFeedback("");
-        setAudioResult("");
-      } else {
-        setCompleted(true);
-        setFeedback("Practice completed!");
-      }
-    }, 1500);
+      nextItem();
+    }, 1200);
   };
 
   const startRecording = async () => {
+    // ✅ block if processing / completed / locked
+    if (isProcessing || completed || lockedUntilNext) return;
+
     try {
       setError(null);
 
@@ -158,12 +168,15 @@ export default function BasicSpeech() {
 
       mediaRecorder.onstop = async () => {
         try {
+          setIsProcessing(true);
+          setLockedUntilNext(true); // ✅ prevents recording again for same word
+
           const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" });
-          console.log("🎤 Blob size:", audioBlob.size);
           await handleUpload(audioBlob);
         } finally {
           stream.getTracks().forEach((t) => t.stop());
           streamRef.current = null;
+          setIsProcessing(false);
         }
       };
 
@@ -194,14 +207,20 @@ export default function BasicSpeech() {
       if (!response.ok) throw new Error("Failed to process audio");
 
       const data = await response.json();
-      console.log("✅ Whisper returned:", data.text);
 
       setAudioResult(data.text || "");
       checkWord(data.text || "");
       setError(null);
     } catch (e) {
       setError("Failed to process audio: " + e.message);
+      // ✅ if upload failed, let them retry this same word
+      setLockedUntilNext(false);
     }
+  };
+
+  const resetSession = () => {
+    // ✅ same style, no full reload
+    setSessionSeed((s) => s + 1);
   };
 
   if (!sessionWords.length) {
@@ -212,6 +231,8 @@ export default function BasicSpeech() {
       </div>
     );
   }
+
+  const recordDisabled = completed || isProcessing || lockedUntilNext;
 
   return (
     <div className="basic-speech-content">
@@ -249,9 +270,24 @@ export default function BasicSpeech() {
               <button
                 onClick={isRecording ? stopRecording : startRecording}
                 className={isRecording ? "recording" : ""}
-                disabled={completed}
+                disabled={recordDisabled && !isRecording}
+                title={
+                  lockedUntilNext
+                    ? "Wait for feedback / next image"
+                    : isProcessing
+                    ? "Processing audio..."
+                    : completed
+                    ? "Session completed"
+                    : ""
+                }
               >
-                {isRecording ? "Stop Recording" : "Start Recording"}
+                {isRecording
+                  ? "Stop Recording"
+                  : isProcessing
+                  ? "Processing..."
+                  : lockedUntilNext
+                  ? "Locked..."
+                  : "Start Recording"}
               </button>
             </div>
 
@@ -280,12 +316,13 @@ export default function BasicSpeech() {
                 <p>
                   Final score: <strong>{score}</strong> / {sessionWords.length}
                 </p>
-                <button
-                  onClick={() => window.location.reload()}
-                  style={{ marginTop: 8 }}
-                >
-                  Start New Session
-                </button>
+
+                {/* ✅ Same style as recording button */}
+                <div className="recording-section">
+                  <button onClick={resetSession} className="">
+                    Start New Session
+                  </button>
+                </div>
               </div>
             )}
           </div>
