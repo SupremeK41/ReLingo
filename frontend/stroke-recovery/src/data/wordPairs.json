@@ -1,0 +1,37 @@
+[
+  { "id": 1, "word": "apple", "image": "apple.jpg", "category": "food" },
+  { "id": 2, "word": "banana", "image": "banana.jpg", "category": "food" },
+  { "id": 3, "word": "bread", "image": "bread.jpg", "category": "food" },
+  { "id": 4, "word": "milk", "image": "milk.jpg", "category": "food" },
+  { "id": 5, "word": "egg", "image": "egg.jpg", "category": "food" },
+
+  { "id": 6, "word": "dog", "image": "dog.jpg", "category": "animal" },
+  { "id": 7, "word": "cat", "image": "cat.jpg", "category": "animal" },
+  { "id": 8, "word": "cow", "image": "cow.jpg", "category": "animal" },
+  { "id": 9, "word": "bird", "image": "bird.jpg", "category": "animal" },
+  { "id": 10, "word": "fish", "image": "fish.jpg", "category": "animal" },
+
+  { "id": 11, "word": "nose", "image": "nose.jpg", "category": "body" },
+  { "id": 12, "word": "eye", "image": "eye.jpg", "category": "body" },
+  { "id": 13, "word": "ear", "image": "ear.jpg", "category": "body" },
+  { "id": 14, "word": "hand", "image": "hand.jpg", "category": "body" },
+  { "id": 15, "word": "foot", "image": "foot.jpg", "category": "body" },
+
+  { "id": 16, "word": "car", "image": "car.jpg", "category": "object" },
+  { "id": 17, "word": "bus", "image": "bus.jpg", "category": "object" },
+  { "id": 18, "word": "chair", "image": "chair.jpg", "category": "object" },
+  { "id": 19, "word": "table", "image": "table.jpg", "category": "object" },
+  { "id": 20, "word": "phone", "image": "phone.jpg", "category": "object" },
+
+  { "id": 21, "word": "tree", "image": "tree.jpg", "category": "nature" },
+  { "id": 22, "word": "sun", "image": "sun.jpg", "category": "nature" },
+  { "id": 23, "word": "moon", "image": "moon.jpg", "category": "nature" },
+  { "id": 24, "word": "flower", "image": "flower.jpg", "category": "nature" },
+  { "id": 25, "word": "mountain", "image": "mountain.jpg", "category": "nature" },
+
+  { "id": 26, "word": "book", "image": "book.jpg", "category": "school" },
+  { "id": 27, "word": "pen", "image": "pen.jpg", "category": "school" },
+  { "id": 28, "word": "clock", "image": "clock.jpg", "category": "object" },
+  { "id": 29, "word": "glasses", "image": "glasses.jpg", "category": "object" },
+  { "id": 30, "word": "shoe", "image": "shoe.jpg", "category": "object" }
+]
