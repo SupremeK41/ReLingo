@@ -1,0 +1,19 @@
+# Environment
+.env
+**/.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Database
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Temp audio
+temp_audio/
+
+# Node
+node_modules/
