@@ -1,6 +1,11 @@
 # Environment
 .env
 **/.env
+backend/.env
+frontend/stroke-recovery/.env.local
+frontend/stroke-recovery/.env
+.env
+.env.local
 
 # Python
 .venv/
