@@ -1,18 +1,26 @@
-import React from 'react';
-import './App.css';
-import logo from './logo2.png';
-import womanTree from './WomanTree2.png';
-import { useNavigate, Routes, Route } from 'react-router-dom';
-import AboutUs from './components/AboutUs';
-import Learning from './components/Learning';
-import BasicSpeech from './components/BasicSpeech';
+import React from "react";
+import "./App.css";
+import logo from "./logo2.png";
+import womanTree from "./WomanTree2.png";
+import { useNavigate, Routes, Route } from "react-router-dom";
+
+import AboutUs from "./components/AboutUs";
+import Learning from "./components/Learning";
+import BasicSpeech from "./components/BasicSpeech";
+
+import {
+  SignedIn,
+  SignedOut,
+  SignInButton,
+  UserButton,
+} from "@clerk/clerk-react";
 
 function MainContent() {
   return (
     <>
       <main className="main-content">
         <h1 className="welcome-text">Welcome to ReLingo</h1>
-        
+
         <div className="cta-section">
           <button className="cta-button">Find Your Voice</button>
         </div>
@@ -22,8 +30,12 @@ function MainContent() {
           <h3 className="sub-tagline">Your Path to Finding Your Voice Again</h3>
         </div>
       </main>
-      
-      <img src={womanTree} alt="Woman and Tree Illustration" className="woman-tree-illustration" />
+
+      <img
+        src={womanTree}
+        alt="Woman and Tree Illustration"
+        className="woman-tree-illustration"
+      />
     </>
   );
 }
@@ -31,29 +43,37 @@ function MainContent() {
 function App() {
   const navigate = useNavigate();
 
-  const handleHomeClick = () => {
-    navigate('/');
-  };
-
-  const handleAboutClick = () => {
-    navigate('/about');
-  };
-
-  const handleLearningClick = () => {
-    navigate('/learning');
-  };
+  const handleHomeClick = () => navigate("/");
+  const handleAboutClick = () => navigate("/about");
+  const handleLearningClick = () => navigate("/learning");
 
   return (
     <div className="App">
       <nav className="navbar">
-        <div className="logo-container" onClick={handleHomeClick} style={{cursor: 'pointer'}}>
+        <div
+          className="logo-container"
+          onClick={handleHomeClick}
+          style={{ cursor: "pointer" }}
+        >
           <img src={logo} alt="ReLingo Logo" className="logo" />
           <h1>ReLingo</h1>
         </div>
+
         <div className="nav-links">
           <button onClick={handleHomeClick}>Home</button>
           <button onClick={handleAboutClick}>About Us</button>
           <button onClick={handleLearningClick}>Start Learning</button>
+
+          {/* Clerk auth buttons */}
+          <SignedOut>
+            <SignInButton mode="modal">
+              <button>Sign in</button>
+            </SignInButton>
+          </SignedOut>
+
+          <SignedIn>
+            <UserButton afterSignOutUrl="/" />
+          </SignedIn>
         </div>
       </nav>
 
