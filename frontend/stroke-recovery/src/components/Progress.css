@@ -1,0 +1,142 @@
+/* frontend/src/components/Progress.css */
+
+.progress-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.progress-title {
+  font-family: "EB Garamond", serif;
+  font-size: 4rem;
+  margin-bottom: 2.5rem;
+  text-align: center;
+  color: #333;
+}
+
+.progress-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .progress-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.progress-card {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 1.6rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+}
+
+.progress-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.progress-card-header h2 {
+  font-family: "EB Garamond", serif;
+  font-size: 2.3rem;
+  margin: 0;
+  color: #222;
+}
+
+.chip {
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(0, 123, 255, 0.12);
+  color: #0056b3;
+}
+
+.exp-bar {
+  width: 100%;
+  height: 14px;
+  background: #eef3fb;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+
+.exp-bar-fill {
+  height: 100%;
+  background: #007bff;
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}
+
+.exp-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.95rem;
+  margin-top: 0.5rem;
+  color: #555;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.9rem;
+  margin-top: 1.3rem;
+}
+
+@media (max-width: 480px) {
+  .stats-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stat {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 0.95rem;
+  text-align: center;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.stat-label {
+  font-size: 0.95rem;
+  color: #666;
+  margin-bottom: 0.35rem;
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #222;
+}
+
+.progress-sub {
+  margin-top: 1rem;
+}
+
+.progress-note {
+  margin-top: 1.2rem;
+  padding: 0.95rem 1rem;
+  border-radius: 12px;
+  background: rgba(0, 123, 255, 0.08);
+  color: #004085;
+  font-size: 1.05rem;
+}
+
+.progress-muted {
+  color: #666;
+  font-size: 1.1rem;
+}
+
+.progress-error {
+  margin: 0 auto 1.2rem auto;
+  padding: 0.9rem 1rem;
+  background: #f8d7da;
+  color: #721c24;
+  border-radius: 10px;
+  max-width: 900px;
+  text-align: center;
+}
