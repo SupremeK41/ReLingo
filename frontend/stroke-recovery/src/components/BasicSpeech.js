@@ -3,9 +3,11 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import "../App.css";
 import "./BasicSpeech.css";
 
+import { useAuth } from "@clerk/clerk-react";
 import wordPairs from "../data/wordPairs.json";
 
 const SESSION_SIZE = 10;
+const TECHNIQUE_ID = "image_naming";
 
 function shuffle(arr) {
   const a = [...arr];
@@ -70,6 +72,8 @@ function isMatch(word, target) {
 }
 
 export default function BasicSpeech() {
+  const { getToken } = useAuth();
+
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false); // ✅ blocks double runs
   const [lockedUntilNext, setLockedUntilNext] = useState(false); // ✅ prevents recording twice for same word
@@ -82,12 +86,19 @@ export default function BasicSpeech() {
   const [score, setScore] = useState(0);
   const [completed, setCompleted] = useState(false);
 
+  // ✅ backend response after posting session score
+  const [scorePostResult, setScorePostResult] = useState(null);
+  const [scorePostError, setScorePostError] = useState(null);
+
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
 
   // ✅ Create a session "seed" we can refresh without reloading the page
   const [sessionSeed, setSessionSeed] = useState(0);
+
+  // ✅ guard to ensure we POST once per completed session
+  const postedSessionRef = useRef(false);
 
   const sessionWords = useMemo(() => {
     const shuffled = shuffle(wordPairs);
@@ -107,6 +118,9 @@ export default function BasicSpeech() {
     setIsRecording(false);
     setIsProcessing(false);
     setLockedUntilNext(false);
+    setScorePostResult(null);
+    setScorePostError(null);
+    postedSessionRef.current = false;
   }, [sessionWords]);
 
   const nextItem = () => {
@@ -128,11 +142,7 @@ export default function BasicSpeech() {
     const transcript = normalize(transcribedText);
     const target = normalize(currentItem?.word || "");
 
-    console.log("🎯 Target word:", target);
-    console.log("🗣️ Transcribed:", transcript);
-
     const words = transcript.split(" ").filter(Boolean);
-
     const isCorrect = words.some((w) => isMatch(w, target));
 
     if (isCorrect) {
@@ -218,8 +228,44 @@ export default function BasicSpeech() {
     }
   };
 
+  // ✅ POST the session score ONCE when session completes
+  useEffect(() => {
+    const postSessionScore = async () => {
+      setScorePostError(null);
+
+      try {
+        const token = await getToken();
+        if (!token) throw new Error("No auth token (are you signed in?)");
+
+        const res = await fetch("http://localhost:8000/api/score", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          // ✅ exp accumulates with score (backend should do gained_exp = delta_score)
+          body: JSON.stringify({
+            technique_id: TECHNIQUE_ID,
+            delta_score: score,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail || "Failed to submit score");
+
+        setScorePostResult(data);
+      } catch (e) {
+        setScorePostError(String(e.message || e));
+      }
+    };
+
+    if (completed && !postedSessionRef.current) {
+      postedSessionRef.current = true; // lock: only post once
+      postSessionScore();
+    }
+  }, [completed, score, getToken]);
+
   const resetSession = () => {
-    // ✅ same style, no full reload
     setSessionSeed((s) => s + 1);
   };
 
@@ -317,7 +363,32 @@ export default function BasicSpeech() {
                   Final score: <strong>{score}</strong> / {sessionWords.length}
                 </p>
 
-                {/* ✅ Same style as recording button */}
+                {/* ✅ Score POST status */}
+                <div style={{ marginTop: 10, fontSize: 13 }}>
+                  {scorePostError && (
+                    <div style={{ color: "crimson" }}>
+                      Failed to save score: {scorePostError}
+                    </div>
+                  )}
+
+                  {scorePostResult?.global && (
+                    <div>
+                      <strong>Saved.</strong> Global EXP:{" "}
+                      {scorePostResult.global.total_exp} | Streak:{" "}
+                      {scorePostResult.global.streak}
+                    </div>
+                  )}
+
+                  {scorePostResult?.technique && (
+                    <div>
+                      Technique ({scorePostResult.technique.technique_id}) EXP:{" "}
+                      {scorePostResult.technique.total_exp} | Best:{" "}
+                      {scorePostResult.technique.best_score} | Attempts:{" "}
+                      {scorePostResult.technique.attempts}
+                    </div>
+                  )}
+                </div>
+
                 <div className="recording-section">
                   <button onClick={resetSession} className="">
                     Start New Session

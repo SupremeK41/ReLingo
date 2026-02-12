@@ -9,6 +9,8 @@ import shutil
 import os
 from dotenv import load_dotenv
 from datetime import date, timedelta
+from models import User, UserTechniqueStats
+
 
 import openai
 from pydantic import BaseModel
@@ -80,18 +82,20 @@ async def me(clerk_user_id: str = Depends(require_clerk_user_id)):
 
 
 class ScorePayload(BaseModel):
+    technique_id: str  # e.g. "image_naming"
     delta_score: int
     delta_exp: int | None = None
+
 
 
 @app.post("/api/score")
 async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(require_clerk_user_id)):
     user = await get_or_create_user(clerk_user_id)
 
+    # ---- global streak logic (unchanged) ----
     today = date.today().isoformat()
     yesterday = (date.today() - timedelta(days=1)).isoformat()
 
-    # streak logic
     if user.last_active_date == today:
         pass
     elif user.last_active_date == yesterday:
@@ -101,17 +105,41 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
 
     user.last_active_date = today
 
-    gained_exp = payload.delta_exp if payload.delta_exp is not None else payload.delta_score
-    user.total_exp += max(0, int(gained_exp))
+    # ---- global exp ----
+    gained_exp = max(0, int(payload.delta_score))
+    user.total_exp += gained_exp
     user.best_daily_score = max(user.best_daily_score, int(payload.delta_score))
-
     await user.save()
 
+    # ---- per-technique stats ----
+    stats = await UserTechniqueStats.get_or_none(user=user, technique_id=payload.technique_id)
+    if not stats:
+        stats = await UserTechniqueStats.create(
+            user=user,
+            technique_id=payload.technique_id,
+            total_exp=0,
+            best_score=0,
+            attempts=0,
+        )
+
+    stats.attempts += 1
+    stats.total_exp += gained_exp
+    stats.best_score = max(stats.best_score, int(payload.delta_score))
+    await stats.save()
+
     return {
-        "total_exp": user.total_exp,
-        "best_daily_score": user.best_daily_score,
-        "streak": user.streak,
-        "last_active_date": user.last_active_date,
+        "global": {
+            "total_exp": user.total_exp,
+            "best_daily_score": user.best_daily_score,
+            "streak": user.streak,
+            "last_active_date": user.last_active_date,
+        },
+        "technique": {
+            "technique_id": stats.technique_id,
+            "total_exp": stats.total_exp,
+            "best_score": stats.best_score,
+            "attempts": stats.attempts,
+        },
     }
 
 
@@ -150,6 +178,32 @@ async def speech_feedback(userText: str = File(...), correctAnswer: str = File(.
         return {"feedback": response.choices[0].message.content}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"GPT feedback failed: {str(e)}")
+    
+
+@app.get("/api/technique/{technique_id}")
+async def get_technique_stats(
+    technique_id: str,
+    clerk_user_id: str = Depends(require_clerk_user_id),
+):
+    user = await get_or_create_user(clerk_user_id)
+
+    stats = await UserTechniqueStats.get_or_none(user=user, technique_id=technique_id)
+    if not stats:
+        # return zeros if never played
+        return {
+            "technique_id": technique_id,
+            "total_exp": 0,
+            "best_score": 0,
+            "attempts": 0,
+        }
+
+    return {
+        "technique_id": stats.technique_id,
+        "total_exp": stats.total_exp,
+        "best_score": stats.best_score,
+        "attempts": stats.attempts,
+    }
+
 
 
 # ------------------ DATABASE ------------------
