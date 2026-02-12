@@ -24,14 +24,59 @@ function normalize(text = "") {
     .trim();
 }
 
-// ✅ light singularization to accept plural forms like "mountains" for "mountain"
-// while still rejecting substrings like "car" in "carcinerate"
+// ✅ light singularization: mountains -> mountain, babies -> baby, buses -> bus
 function singularize(word = "") {
   if (!word) return word;
-  if (word.endsWith("ies") && word.length > 3) return word.slice(0, -3) + "y"; // babies -> baby
-  if (word.endsWith("es") && word.length > 2) return word.slice(0, -2);        // boxes -> box, buses -> bus
-  if (word.endsWith("s") && word.length > 1) return word.slice(0, -1);         // mountains -> mountain
+  if (word.endsWith("ies") && word.length > 3) return word.slice(0, -3) + "y";
+  if (word.endsWith("es") && word.length > 2) return word.slice(0, -2);
+  if (word.endsWith("s") && word.length > 1) return word.slice(0, -1);
   return word;
+}
+
+// ✅ Levenshtein distance to tolerate small ASR mistakes (sun->son)
+function levenshtein(a = "", b = "") {
+  if (a === b) return 0;
+  const matrix = Array.from({ length: b.length + 1 }, () =>
+    Array(a.length + 1).fill(0)
+  );
+
+  for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
+  for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
+
+  for (let j = 1; j <= b.length; j++) {
+    for (let i = 1; i <= a.length; i++) {
+      if (a[i - 1] === b[j - 1]) {
+        matrix[j][i] = matrix[j - 1][i - 1];
+      } else {
+        matrix[j][i] = Math.min(
+          matrix[j - 1][i - 1] + 1,
+          matrix[j][i - 1] + 1,
+          matrix[j - 1][i] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
+}
+
+// ✅ Tolerance rule: exact word match OR plural match OR small edit distance
+function isMatch(word, target) {
+  if (!word || !target) return false;
+
+  // Exact
+  if (word === target) return true;
+
+  // Plural tolerance
+  if (singularize(word) === target) return true;
+
+  // Small ASR error tolerance (sun/son, nose/noise etc.)
+  const dist = levenshtein(word, target);
+
+  // Make threshold depend on word length (safer)
+  const maxDist = target.length <= 4 ? 1 : 2;
+
+  return dist <= maxDist;
 }
 
 export default function BasicSpeech() {
@@ -70,11 +115,10 @@ export default function BasicSpeech() {
     console.log("🎯 Target word:", target);
     console.log("🗣️ Transcribed:", transcript);
 
-    // Split transcript into words, singularize each, then compare to target
+    // Split transcript into words (prevents substring matches like car in carcinerate)
     const words = transcript.split(" ").filter(Boolean);
-    const normalizedWords = words.map(singularize);
 
-    const isCorrect = normalizedWords.includes(target);
+    const isCorrect = words.some((w) => isMatch(w, target));
 
     if (isCorrect) {
       setFeedback("Correct!");
