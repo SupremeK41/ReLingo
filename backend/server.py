@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from tortoise.contrib.fastapi import register_tortoise
 from models import User
 from schemas import UserOut
+from metaphone import doublemetaphone
+
 
 import whisper
 import shutil
@@ -18,6 +20,7 @@ from pydantic import BaseModel
 # ✅ NEW: import JWT verifier dependency
 from auth_clerk import require_clerk_user_id
 
+import re
 
 # ------------------ ENV + KEYS ------------------
 
@@ -45,6 +48,80 @@ whisper_model = whisper.load_model("base")
 
 if not os.path.exists("temp_audio"):
     os.makedirs("temp_audio")
+
+def normalize_word(s: str) -> str:
+    s = s.lower()
+    s = re.sub(r"[^\w\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def singularize_simple(w: str) -> str:
+    if w.endswith("ies") and len(w) > 3:
+        return w[:-3] + "y"
+    if w.endswith("es") and len(w) > 2:
+        return w[:-2]
+    if w.endswith("s") and len(w) > 1:
+        return w[:-1]
+    return w
+
+def levenshtein(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        cur = [i]
+        for j, cb in enumerate(b, start=1):
+            ins = cur[j - 1] + 1
+            dele = prev[j] + 1
+            sub = prev[j - 1] + (0 if ca == cb else 1)
+            cur.append(min(ins, dele, sub))
+        prev = cur
+    return prev[-1]
+
+def allowed_distance(max_len: int) -> int:
+    if max_len <= 3:
+        return 1
+    if max_len <= 6:
+        return 2
+    return 3
+
+def phonetic_codes(w: str) -> set[str]:
+    a, b = doublemetaphone(w)
+    return {c for c in (a, b) if c}
+
+def is_match_phonetic(word: str, target: str) -> tuple[bool, int, float, bool]:
+    """
+    Returns: (matched, dist, rel, phonetic_match)
+    """
+    w = singularize_simple(normalize_word(word))
+    t = singularize_simple(normalize_word(target))
+
+    if not w or not t:
+        return (False, 999, 1.0, False)
+    if w == t:
+        return (True, 0, 0.0, True)
+
+    dist = levenshtein(w, t)
+    max_len = max(len(w), len(t))
+    rel = dist / max_len if max_len else 1.0
+
+    # edit tolerance
+    if dist <= allowed_distance(max_len) or rel <= 0.25:
+        return (True, dist, rel, False)
+
+    # phonetic tolerance
+    pw = phonetic_codes(w)
+    pt = phonetic_codes(t)
+    phonetic_match = bool(pw & pt)
+    if phonetic_match:
+        return (True, dist, rel, True)
+
+    return (False, dist, rel, False)
 
 
 @app.get("/")
@@ -148,33 +225,86 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
 @app.post("/api/speech-to-text")
 async def speech_to_text(
     audio: UploadFile = File(...),
-    vocab: str | None = Form(default=None),  # comma-separated words
+    vocab: str | None = Form(default=None),  # comma-separated session words
 ):
     temp_path = f"temp_audio/{audio.filename}"
     try:
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(audio.file, buffer)
 
-        # Force English + deterministic decoding
         kwargs = {
             "language": "en",
             "task": "transcribe",
             "temperature": 0,
         }
 
-        # Optional session vocabulary bias
+        vocab_list: list[str] = []
         if vocab:
-            # keep it safe + short
-            words = [w.strip() for w in vocab.split(",") if w.strip()]
-            words = words[:50]  # cap so prompt doesn't get huge
-            if words:
+            vocab_list = [v.strip() for v in vocab.split(",") if v.strip()]
+            vocab_list = vocab_list[:50]
+            if vocab_list:
                 kwargs["initial_prompt"] = (
                     "This is a single-word naming exercise. "
-                    "The user will say one of these words: " + ", ".join(words) + "."
+                    "The user will say one of these words: " + ", ".join(vocab_list) + "."
                 )
 
         result = whisper_model.transcribe(temp_path, **kwargs)
-        return {"text": result.get("text", "")}
+        text = (result.get("text") or "").strip()
+
+        # If no vocab provided, just return transcript
+        if not vocab_list:
+            return {"text": text, "matched": None, "best_guess": None}
+
+        # Find best target in vocab_list using our tolerant matcher
+        best = None
+        best_dist = 10**9
+        best_rel = 1.0
+        best_phon = False
+        best_matched = False
+
+        # compare against the transcript as a whole + tokens
+        transcript_norm = normalize_word(text)
+        tokens = transcript_norm.split()
+
+        candidates = [transcript_norm] + tokens
+
+        for target in vocab_list:
+            target_norm = normalize_word(target)
+            # try matching any candidate (whole transcript or token)
+            for cand in candidates:
+                matched, dist, rel, phon = is_match_phonetic(cand, target_norm)
+
+                # choose best by: matched first, then lower rel, then lower dist
+                score_tuple = (
+                    0 if matched else 1,
+                    rel,
+                    dist,
+                )
+
+                if best is None:
+                    best = target
+                    best_dist = dist
+                    best_rel = rel
+                    best_phon = phon
+                    best_matched = matched
+                    best_score = score_tuple
+                else:
+                    if score_tuple < best_score:
+                        best = target
+                        best_dist = dist
+                        best_rel = rel
+                        best_phon = phon
+                        best_matched = matched
+                        best_score = score_tuple
+
+        return {
+            "text": text,
+            "best_guess": best,          # which vocab word it thinks is closest
+            "matched": bool(best_matched),# whether it counts as correct match
+            "distance": best_dist,
+            "rel_distance": best_rel,
+            "phonetic_used": bool(best_phon),
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
