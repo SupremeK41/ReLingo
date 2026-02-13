@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from tortoise.contrib.fastapi import register_tortoise
 from models import User
@@ -146,14 +146,35 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
 # ------------------ LOCAL WHISPER ENDPOINT ------------------
 
 @app.post("/api/speech-to-text")
-async def speech_to_text(audio: UploadFile = File(...)):
+async def speech_to_text(
+    audio: UploadFile = File(...),
+    vocab: str | None = Form(default=None),  # comma-separated words
+):
     temp_path = f"temp_audio/{audio.filename}"
     try:
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(audio.file, buffer)
 
-        result = whisper_model.transcribe(temp_path)
-        return {"text": result["text"]}
+        # Force English + deterministic decoding
+        kwargs = {
+            "language": "en",
+            "task": "transcribe",
+            "temperature": 0,
+        }
+
+        # Optional session vocabulary bias
+        if vocab:
+            # keep it safe + short
+            words = [w.strip() for w in vocab.split(",") if w.strip()]
+            words = words[:50]  # cap so prompt doesn't get huge
+            if words:
+                kwargs["initial_prompt"] = (
+                    "This is a single-word naming exercise. "
+                    "The user will say one of these words: " + ", ".join(words) + "."
+                )
+
+        result = whisper_model.transcribe(temp_path, **kwargs)
+        return {"text": result.get("text", "")}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")

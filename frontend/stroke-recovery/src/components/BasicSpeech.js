@@ -62,14 +62,33 @@ function levenshtein(a = "", b = "") {
 function isMatch(word, target) {
   if (!word || !target) return false;
 
-  const w = singularize(word);
+  const w = singularize(normalize(word));
+  const t = singularize(normalize(target));
 
-  if (w === target) return true;
+  if (w === t) return true;
 
-  const dist = levenshtein(w, target);
-  const maxDist = target.length <= 4 ? 1 : 2; // tolerate small ASR errors
-  return dist <= maxDist;
+  const dist = levenshtein(w, t);
+  const maxLen = Math.max(w.length, t.length);
+
+  // 🔹 Relative tolerance based on word length
+  let allowedDistance;
+
+  if (maxLen <= 3) {
+    allowedDistance = 1;            // very short words
+  } else if (maxLen <= 5) {
+    allowedDistance = 1;
+  } else if (maxLen <= 8) {
+    allowedDistance = 2;
+  } else {
+    allowedDistance = 3;            // long words tolerate more distortion
+  }
+
+  // 🔹 Also allow percentage-based tolerance (important)
+  const relativeTolerance = dist / maxLen;
+
+  return dist <= allowedDistance || relativeTolerance <= 0.25;
 }
+
 
 export default function BasicSpeech() {
   const { getToken } = useAuth();
@@ -139,11 +158,15 @@ export default function BasicSpeech() {
   };
 
   const checkWord = (transcribedText) => {
-    const transcript = normalize(transcribedText);
-    const target = normalize(currentItem?.word || "");
+      const transcript = normalize(transcribedText);
+      const target = normalize(currentItem?.word || "");
 
-    const words = transcript.split(" ").filter(Boolean);
-    const isCorrect = words.some((w) => isMatch(w, target));
+      const words = transcript.split(" ").filter(Boolean);
+
+// ✅ check full transcript first (handles “uh apple”, “it’s apple”, etc.)
+      const isCorrect =
+      isMatch(transcript, target) ||
+      words.some((w) => isMatch(w, target));
 
     if (isCorrect) {
       setFeedback("Correct!");
@@ -204,29 +227,33 @@ export default function BasicSpeech() {
     }
   };
 
-  const handleUpload = async (audioBlob) => {
-    const formData = new FormData();
-    formData.append("audio", audioBlob, "recording.webm");
+const handleUpload = async (audioBlob) => {
+  const formData = new FormData();
+  formData.append("audio", audioBlob, "recording.webm");
 
-    try {
-      const response = await fetch("http://localhost:8000/api/speech-to-text", {
-        method: "POST",
-        body: formData,
-      });
+  // ✅ session vocabulary bias (only words in THIS session)
+  const vocab = sessionWords.map((x) => x.word).join(",");
+  formData.append("vocab", vocab);
 
-      if (!response.ok) throw new Error("Failed to process audio");
+  try {
+    const response = await fetch("http://localhost:8000/api/speech-to-text", {
+      method: "POST",
+      body: formData,
+    });
 
-      const data = await response.json();
+    if (!response.ok) throw new Error("Failed to process audio");
 
-      setAudioResult(data.text || "");
-      checkWord(data.text || "");
-      setError(null);
-    } catch (e) {
-      setError("Failed to process audio: " + e.message);
-      // ✅ if upload failed, let them retry this same word
-      setLockedUntilNext(false);
-    }
-  };
+    const data = await response.json();
+
+    setAudioResult(data.text || "");
+    checkWord(data.text || "");
+    setError(null);
+  } catch (e) {
+    setError("Failed to process audio: " + e.message);
+    setLockedUntilNext(false);
+  }
+};
+
 
   // ✅ POST the session score ONCE when session completes
   useEffect(() => {
