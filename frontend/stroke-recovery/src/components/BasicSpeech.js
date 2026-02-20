@@ -30,6 +30,24 @@ function pointsForAttempt(attemptNum) {
   return 1;
 }
 
+// Backend "no-speech" guard: do NOT consume an attempt
+function isNoSpeech(payload) {
+  // backend returns text="" when too_short/no_speech_prob gating triggers
+  if (!payload) return false;
+  const t = (payload.text || "").trim();
+  if (t !== "") return false;
+
+  // accept any of these flags (we added too_short/no_speech_prob in backend)
+  if (payload.too_short) return true;
+  if (typeof payload.no_speech_prob === "number" && payload.no_speech_prob >= 0.8) return true;
+  if (payload.prompt_leak) return true;
+
+  // fallback: empty text with no best_guess + no distances likely means "didn't catch"
+  if (payload.best_guess == null && payload.distance == null && payload.rel_distance == null) return true;
+
+  return false;
+}
+
 export default function BasicSpeech() {
   const { getToken } = useAuth();
 
@@ -125,8 +143,6 @@ export default function BasicSpeech() {
 
     setSessionPoints((p) => p + awardedPoints);
 
-    // IMPORTANT: Match backend ScoreItem fields exactly:
-    // { target, awardedPoints, attemptsUsed, cueShown?, transcript?, best_guess?, matched? }
     setItemResults((prev) => [
       ...prev,
       {
@@ -147,6 +163,14 @@ export default function BasicSpeech() {
   };
 
   const handleEvaluationResult = (payload) => {
+    // NEW: no-speech / too-short guard -> do NOT consume an attempt
+    if (isNoSpeech(payload)) {
+      setFeedback("Didn’t catch that—try speaking a bit longer.");
+      setLockedUntilNext(false);
+      // keep attemptNum the same, do not show cue, do not progress
+      return;
+    }
+
     const matched = !!payload?.matched;
 
     if (matched) {
@@ -237,8 +261,6 @@ export default function BasicSpeech() {
     const vocab = sessionWords.map((x) => x.word).join(",");
     formData.append("vocab", vocab);
 
-    // IMPORTANT for clinical correctness:
-    // backend will evaluate matched vs target (not best_guess)
     formData.append("target", currentItem.word);
 
     // Optional: send attempt/cue info (backend accepts)
@@ -258,7 +280,6 @@ export default function BasicSpeech() {
       setAudioResult(data.text || "");
       setError(null);
 
-      // NEW: clinically meaningful evaluation flow
       handleEvaluationResult(data);
     } catch (e) {
       setError("Failed to process audio: " + e.message);

@@ -1,4 +1,4 @@
-# server.py (UPDATED - integrated properly with daily stats + technique rollups)
+# server.py (UPDATED - hallucination-resistant Whisper + SHORT-AUDIO guard + no-speech gating)
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from tortoise.contrib.fastapi import register_tortoise
@@ -10,6 +10,7 @@ import os
 from dotenv import load_dotenv
 from datetime import date, timedelta
 import re
+import uuid
 
 import openai
 from pydantic import BaseModel
@@ -103,6 +104,7 @@ def is_match_phonetic(word: str, target: str) -> tuple[bool, int, float, bool]:
     max_len = max(len(w), len(t))
     rel = dist / max_len if max_len else 1.0
 
+    # keep your tolerance as-is (you can bump rel to 0.30 later if needed)
     if dist <= allowed_distance(max_len) or rel <= 0.25:
         return (True, dist, rel, False)
 
@@ -197,7 +199,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     user.total_exp += session_points
     await user.save()
 
-    # ---- daily aggregation (NEW) ----
+    # ---- daily aggregation ----
     daily = await UserDailyStats.get_or_none(user=user, day=today)
     if not daily:
         daily = await UserDailyStats.create(user=user, day=today, points=0, sessions_played=0)
@@ -206,11 +208,10 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     daily.sessions_played += 1
     await daily.save()
 
-    # Make "best_daily_score" a TRUE best daily total (NEW correct meaning)
     user.best_daily_score = max(_safe_int(user.best_daily_score), _safe_int(daily.points))
     await user.save()
 
-    # ---- per-technique aggregation (UPDATED) ----
+    # ---- per-technique aggregation ----
     stats = await UserTechniqueStats.get_or_none(user=user, technique_id=payload.technique_id)
     if not stats:
         stats = await UserTechniqueStats.create(
@@ -219,7 +220,6 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
             total_exp=0,
             best_score=0,
             attempts=0,
-
             total_points=0,
             best_session_points=0,
             sessions_played=0,
@@ -231,17 +231,16 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
             incorrect=0,
         )
 
-    # Update "legacy" fields to mirror new naming (so old UI won't break)
+    # legacy mirrors
     stats.attempts += 1
     stats.total_exp += session_points
     stats.best_score = max(_safe_int(stats.best_score), session_points)
 
-    # Update new fields
+    # new fields
     stats.sessions_played += 1
     stats.total_points += session_points
     stats.best_session_points = max(_safe_int(stats.best_session_points), session_points)
 
-    # Derive per-item metrics if items supplied
     items = payload.items or []
     session_size = payload.session_size or (len(items) if items else 0)
 
@@ -249,9 +248,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
         stats.total_items += _safe_int(session_size)
 
     if items:
-        # attempts and outcome counts
         stats.total_attempts += sum(max(0, _safe_int(it.attemptsUsed)) for it in items)
-
         for it in items:
             pts = _safe_int(it.awardedPoints)
             if pts == 3:
@@ -265,7 +262,6 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
 
     await stats.save()
 
-    # Optional analytics block returned to frontend
     avg_attempts = None
     if items:
         total_attempts = sum(max(0, _safe_int(it.attemptsUsed)) for it in items)
@@ -274,7 +270,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     return {
         "global": {
             "total_exp": user.total_exp,
-            "best_daily_score": user.best_daily_score,   # now true best daily points
+            "best_daily_score": user.best_daily_score,
             "streak": user.streak,
             "last_active_date": user.last_active_date,
             "today_points": daily.points,
@@ -282,12 +278,10 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
         },
         "technique": {
             "technique_id": stats.technique_id,
-
             # legacy
             "total_exp": stats.total_exp,
             "best_score": stats.best_score,
             "attempts": stats.attempts,
-
             # new
             "total_points": stats.total_points,
             "best_session_points": stats.best_session_points,
@@ -307,40 +301,106 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     }
 
 # ------------------ LOCAL WHISPER ENDPOINT ------------------
-# Slightly improved: evaluate "matched" vs *target* if provided, while still returning best_guess over vocab.
+# Fix hallucinations: safe prompt + repetition thresholds + no previous text conditioning
+# PLUS: short-audio guard + no-speech gating so tiny clips return empty transcript
+
+_PROMPT_LEAK_PHRASES = (
+    "the user will say one of these words",
+    "single word naming exercise",
+    "this is a single word",
+)
+
+# Tune these to your recordings
+_MIN_WEBM_BYTES = 12000          # below this: likely too short / near-empty
+_NO_SPEECH_PROB_CUTOFF = 0.80    # above this: treat as silence
 
 @app.post("/api/speech-to-text")
 async def speech_to_text(
     audio: UploadFile = File(...),
-    vocab: str | None = Form(default=None),   # comma-separated session words
-    target: str | None = Form(default=None),  # the intended word for this item (frontend already sends this)
-
-    # optional debug/meta (accepted so you won't get 422)
+    vocab: str | None = Form(default=None),
+    target: str | None = Form(default=None),
     attempt_num: int | None = Form(default=None),
     cue_shown: int | None = Form(default=None),
 ):
-    temp_path = f"temp_audio/{audio.filename}"
+    temp_path = f"temp_audio/{uuid.uuid4().hex}.webm"
+
     try:
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(audio.file, buffer)
 
-        kwargs = {"language": "en", "task": "transcribe", "temperature": 0}
+        file_size = os.path.getsize(temp_path)
+        too_short = file_size < _MIN_WEBM_BYTES
+
+        kwargs = {
+            "language": "en",
+            "task": "transcribe",
+            "temperature": 0,
+
+            # Key hallucination/repetition controls
+            "condition_on_previous_text": False,
+            "no_speech_threshold": 0.6,
+            "logprob_threshold": -1.0,
+            "compression_ratio_threshold": 2.4,
+        }
 
         vocab_list: list[str] = []
         if vocab:
             vocab_list = [v.strip() for v in vocab.split(",") if v.strip()][:50]
-            if vocab_list:
-                kwargs["initial_prompt"] = (
-                    "This is a single-word naming exercise. "
-                    "The user will say one of these words: " + ", ".join(vocab_list) + "."
-                )
+
+        # IMPORTANT: disable prompt if recording is too short
+        if vocab_list and not too_short:
+            kwargs["initial_prompt"] = "Words: " + ", ".join(vocab_list)
 
         result = whisper_model.transcribe(temp_path, **kwargs)
         text = (result.get("text") or "").strip()
 
-        transcript_norm = normalize_word(text)
-        tokens = transcript_norm.split()
-        candidates = [transcript_norm] + tokens
+        # Use Whisper no_speech_prob (segment-level) to detect silence/near-silence
+        segments = result.get("segments") or []
+        max_no_speech_prob = 0.0
+        for seg in segments:
+            try:
+                p = float(seg.get("no_speech_prob") or 0.0)
+                if p > max_no_speech_prob:
+                    max_no_speech_prob = p
+            except Exception:
+                pass
+
+        # If audio is tiny OR Whisper thinks it's silence, return empty transcript
+        if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
+            return {
+                "text": "",
+                "matched": False if target else None,
+                "best_guess": None,
+                "distance": None,
+                "rel_distance": None,
+                "phonetic_used": None,
+                "target": target,
+                "attempt_num": attempt_num,
+                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+                "too_short": too_short,
+                "no_speech_prob": max_no_speech_prob,
+            }
+
+        # Safety net: drop obvious prompt leakage (treat as no useful speech)
+        tnorm = normalize_word(text)
+        if any(p in tnorm for p in _PROMPT_LEAK_PHRASES):
+            return {
+                "text": "",
+                "matched": False if target else None,
+                "best_guess": None,
+                "distance": None,
+                "rel_distance": None,
+                "phonetic_used": None,
+                "target": target,
+                "attempt_num": attempt_num,
+                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+                "too_short": False,
+                "no_speech_prob": max_no_speech_prob,
+                "prompt_leak": True,
+            }
+
+        tokens = tnorm.split()
+        candidates = [tnorm] + tokens if tnorm else [""]
 
         # Compute best_guess over vocab (for UI/feedback)
         best_guess = None
@@ -349,7 +409,7 @@ async def speech_to_text(
         best_phon = False
         best_guess_matched = False
 
-        if vocab_list:
+        if vocab_list and tnorm:
             best_score_tuple = None
             for vocab_target in vocab_list:
                 target_norm = normalize_word(vocab_target)
@@ -365,18 +425,17 @@ async def speech_to_text(
                         best_phon = phon
                         best_guess_matched = matched
 
-        # Determine "matched" vs the provided target (clinically correct)
+        # Determine "matched" vs provided target (clinically correct)
         matched_vs_target = None
         dist_vs_target = None
         rel_vs_target = None
         phon_vs_target = None
 
-        if target:
-            tnorm = normalize_word(target)
-            # match any candidate token/transcript to the *target*
+        if target and tnorm:
+            t_target = normalize_word(target)
             best_target_tuple = None
             for cand in candidates:
-                m, d, r, p = is_match_phonetic(cand, tnorm)
+                m, d, r, p = is_match_phonetic(cand, t_target)
                 tup = (0 if m else 1, r, d)
                 if best_target_tuple is None or tup < best_target_tuple:
                     best_target_tuple = tup
@@ -385,22 +444,26 @@ async def speech_to_text(
                     rel_vs_target = r
                     phon_vs_target = bool(p)
 
-        # If no target was supplied, fall back to best_guess match info (older behaviour)
-        final_matched = matched_vs_target if matched_vs_target is not None else (bool(best_guess_matched) if vocab_list else None)
+        final_matched = (
+            matched_vs_target
+            if matched_vs_target is not None
+            else (bool(best_guess_matched) if vocab_list and tnorm else None)
+        )
 
         return {
             "text": text,
             "matched": final_matched,
-
             "best_guess": best_guess,
-            "distance": dist_vs_target if dist_vs_target is not None else (best_dist if vocab_list else None),
-            "rel_distance": rel_vs_target if rel_vs_target is not None else (best_rel if vocab_list else None),
-            "phonetic_used": phon_vs_target if phon_vs_target is not None else (bool(best_phon) if vocab_list else None),
+            "distance": dist_vs_target if dist_vs_target is not None else (best_dist if vocab_list and tnorm else None),
+            "rel_distance": rel_vs_target if rel_vs_target is not None else (best_rel if vocab_list and tnorm else None),
+            "phonetic_used": phon_vs_target if phon_vs_target is not None else (bool(best_phon) if vocab_list and tnorm else None),
 
-            # echoes (debug)
+            # echoes/debug
             "target": target,
             "attempt_num": attempt_num,
             "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+            "too_short": False,
+            "no_speech_prob": max_no_speech_prob,
         }
 
     except Exception as e:
