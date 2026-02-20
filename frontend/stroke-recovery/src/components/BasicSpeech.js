@@ -18,94 +18,43 @@ function shuffle(arr) {
   return a;
 }
 
-function normalize(text = "") {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+function getCue(word) {
+  if (!word) return "";
+  return word[0].toUpperCase();
 }
 
-function singularize(word = "") {
-  if (!word) return word;
-  if (word.endsWith("ies") && word.length > 3) return word.slice(0, -3) + "y";
-  if (word.endsWith("es") && word.length > 2) return word.slice(0, -2);
-  if (word.endsWith("s") && word.length > 1) return word.slice(0, -1);
-  return word;
+// attempt 1 -> 3 points, attempt 2 -> 2 points, attempt 3 (after cue) -> 1 point
+function pointsForAttempt(attemptNum) {
+  if (attemptNum === 1) return 3;
+  if (attemptNum === 2) return 2;
+  return 1;
 }
-
-function levenshtein(a = "", b = "") {
-  if (a === b) return 0;
-  const matrix = Array.from({ length: b.length + 1 }, () =>
-    Array(a.length + 1).fill(0)
-  );
-
-  for (let i = 0; i <= a.length; i++) matrix[0][i] = i;
-  for (let j = 0; j <= b.length; j++) matrix[j][0] = j;
-
-  for (let j = 1; j <= b.length; j++) {
-    for (let i = 1; i <= a.length; i++) {
-      if (a[i - 1] === b[j - 1]) {
-        matrix[j][i] = matrix[j - 1][i - 1];
-      } else {
-        matrix[j][i] = Math.min(
-          matrix[j - 1][i - 1] + 1,
-          matrix[j][i - 1] + 1,
-          matrix[j - 1][i] + 1
-        );
-      }
-    }
-  }
-  return matrix[b.length][a.length];
-}
-
-function isMatch(word, target) {
-  if (!word || !target) return false;
-
-  const w = singularize(normalize(word));
-  const t = singularize(normalize(target));
-
-  if (w === t) return true;
-
-  const dist = levenshtein(w, t);
-  const maxLen = Math.max(w.length, t.length);
-
-  // 🔹 Relative tolerance based on word length
-  let allowedDistance;
-
-  if (maxLen <= 3) {
-    allowedDistance = 1;            // very short words
-  } else if (maxLen <= 5) {
-    allowedDistance = 1;
-  } else if (maxLen <= 8) {
-    allowedDistance = 2;
-  } else {
-    allowedDistance = 3;            // long words tolerate more distortion
-  }
-
-  // 🔹 Also allow percentage-based tolerance (important)
-  const relativeTolerance = dist / maxLen;
-
-  return dist <= allowedDistance || relativeTolerance <= 0.25;
-}
-
 
 export default function BasicSpeech() {
   const { getToken } = useAuth();
 
   const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false); // ✅ blocks double runs
-  const [lockedUntilNext, setLockedUntilNext] = useState(false); // ✅ prevents recording twice for same word
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // keep this to avoid accidental double-record/double-eval for same attempt
+  const [lockedUntilNext, setLockedUntilNext] = useState(false);
 
   const [audioResult, setAudioResult] = useState("");
   const [error, setError] = useState(null);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [feedback, setFeedback] = useState("");
-  const [score, setScore] = useState(0);
+
+  // NEW: clinically meaningful points
+  const [sessionPoints, setSessionPoints] = useState(0);
+
+  // NEW: attempt logic per item
+  // 1 = first attempt, 2 = second attempt, 3 = "after cue" attempt
+  const [attemptNum, setAttemptNum] = useState(1);
+  const [showCue, setShowCue] = useState(false);
+
   const [completed, setCompleted] = useState(false);
 
-  // ✅ backend response after posting session score
   const [scorePostResult, setScorePostResult] = useState(null);
   const [scorePostError, setScorePostError] = useState(null);
 
@@ -113,11 +62,11 @@ export default function BasicSpeech() {
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
 
-  // ✅ Create a session "seed" we can refresh without reloading the page
   const [sessionSeed, setSessionSeed] = useState(0);
-
-  // ✅ guard to ensure we POST once per completed session
   const postedSessionRef = useRef(false);
+
+  // Optional: per-item breakdown (handy for debugging / future analytics)
+  const [itemResults, setItemResults] = useState([]);
 
   const sessionWords = useMemo(() => {
     const shuffled = shuffle(wordPairs);
@@ -126,10 +75,9 @@ export default function BasicSpeech() {
 
   const currentItem = sessionWords[currentIndex];
 
+  // Reset state when session changes
   useEffect(() => {
-    // reset state when session changes
     setCurrentIndex(0);
-    setScore(0);
     setFeedback("");
     setAudioResult("");
     setCompleted(false);
@@ -140,54 +88,107 @@ export default function BasicSpeech() {
     setScorePostResult(null);
     setScorePostError(null);
     postedSessionRef.current = false;
+
+    // NEW resets
+    setSessionPoints(0);
+    setAttemptNum(1);
+    setShowCue(false);
+    setItemResults([]);
   }, [sessionWords]);
+
+  const resetForNextItem = (nextIndex) => {
+    setCurrentIndex(nextIndex);
+    setFeedback("");
+    setAudioResult("");
+    setError(null);
+
+    setLockedUntilNext(false);
+
+    // NEW resets
+    setAttemptNum(1);
+    setShowCue(false);
+  };
 
   const nextItem = () => {
     const nextIndex = currentIndex + 1;
-
     if (nextIndex < sessionWords.length) {
-      setCurrentIndex(nextIndex);
-      setFeedback("");
-      setAudioResult("");
-      setError(null);
-      setLockedUntilNext(false);
+      resetForNextItem(nextIndex);
     } else {
       setCompleted(true);
       setFeedback("Practice completed!");
+      setLockedUntilNext(false);
     }
   };
 
-  const checkWord = (transcribedText) => {
-      const transcript = normalize(transcribedText);
-      const target = normalize(currentItem?.word || "");
+  const finalizeCurrentItem = ({ awardedPoints, payload }) => {
+    const target = currentItem?.word || "";
 
-      const words = transcript.split(" ").filter(Boolean);
+    setSessionPoints((p) => p + awardedPoints);
 
-// ✅ check full transcript first (handles “uh apple”, “it’s apple”, etc.)
-      const isCorrect =
-      isMatch(transcript, target) ||
-      words.some((w) => isMatch(w, target));
+    // IMPORTANT: Match backend ScoreItem fields exactly:
+    // { target, awardedPoints, attemptsUsed, cueShown?, transcript?, best_guess?, matched? }
+    setItemResults((prev) => [
+      ...prev,
+      {
+        target,
+        awardedPoints,
+        attemptsUsed: attemptNum,
+        cueShown: showCue,
+        transcript: payload?.text || "",
+        best_guess: payload?.best_guess || "",
+        matched: !!payload?.matched,
+      },
+    ]);
 
-    if (isCorrect) {
-      setFeedback("Correct!");
-      setScore((prev) => prev + 1);
-    } else {
-      setFeedback("Incorrect!");
-    }
-
-    // ✅ short delay for clean UX transition
+    // brief feedback then move on
     setTimeout(() => {
       nextItem();
     }, 1200);
   };
 
+  const handleEvaluationResult = (payload) => {
+    const matched = !!payload?.matched;
+
+    if (matched) {
+      const pts = pointsForAttempt(attemptNum);
+      setFeedback(
+        attemptNum === 1
+          ? "Correct! (+3)"
+          : attemptNum === 2
+          ? "Correct! (+2)"
+          : "Correct after cue! (+1)"
+      );
+      finalizeCurrentItem({ awardedPoints: pts, payload });
+      return;
+    }
+
+    // Not matched:
+    if (attemptNum === 1) {
+      setFeedback("Incorrect — here’s a cue. Try again.");
+      setShowCue(true);
+      setAttemptNum(2);
+      setLockedUntilNext(false); // unlock so they can record again
+      return;
+    }
+
+    if (attemptNum === 2) {
+      setFeedback("Still not quite — use the cue and try once more.");
+      setShowCue(true);
+      setAttemptNum(3);
+      setLockedUntilNext(false);
+      return;
+    }
+
+    // attemptNum === 3 and still incorrect -> 0 points
+    setFeedback("Incorrect. (+0)");
+    finalizeCurrentItem({ awardedPoints: 0, payload });
+  };
+
   const startRecording = async () => {
-    // ✅ block if processing / completed / locked
     if (isProcessing || completed || lockedUntilNext) return;
 
     try {
       setError(null);
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
@@ -202,7 +203,7 @@ export default function BasicSpeech() {
       mediaRecorder.onstop = async () => {
         try {
           setIsProcessing(true);
-          setLockedUntilNext(true); // ✅ prevents recording again for same word
+          setLockedUntilNext(true);
 
           const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" });
           await handleUpload(audioBlob);
@@ -227,42 +228,50 @@ export default function BasicSpeech() {
     }
   };
 
-const handleUpload = async (audioBlob) => {
-  const formData = new FormData();
-  formData.append("audio", audioBlob, "recording.webm");
+  const handleUpload = async (audioBlob) => {
+    if (!currentItem) return;
 
-  // ✅ session vocabulary bias (only words in THIS session)
-  const vocab = sessionWords.map((x) => x.word).join(",");
-  formData.append("vocab", vocab);
+    const formData = new FormData();
+    formData.append("audio", audioBlob, "recording.webm");
 
-  try {
-    const response = await fetch("http://localhost:8000/api/speech-to-text", {
-      method: "POST",
-      body: formData,
-    });
+    const vocab = sessionWords.map((x) => x.word).join(",");
+    formData.append("vocab", vocab);
 
-    if (!response.ok) throw new Error("Failed to process audio");
+    // IMPORTANT for clinical correctness:
+    // backend will evaluate matched vs target (not best_guess)
+    formData.append("target", currentItem.word);
 
-    const data = await response.json();
+    // Optional: send attempt/cue info (backend accepts)
+    formData.append("attempt_num", String(attemptNum));
+    formData.append("cue_shown", showCue ? "1" : "0");
 
-    setAudioResult(data.text || "");
-    checkWord(data.text || "");
-    setError(null);
-  } catch (e) {
-    setError("Failed to process audio: " + e.message);
-    setLockedUntilNext(false);
-  }
-};
+    try {
+      const response = await fetch("http://localhost:8000/api/speech-to-text", {
+        method: "POST",
+        body: formData,
+      });
 
+      if (!response.ok) throw new Error("Failed to process audio");
 
-  // ✅ POST the session score ONCE when session completes
+      const data = await response.json();
+
+      setAudioResult(data.text || "");
+      setError(null);
+
+      // NEW: clinically meaningful evaluation flow
+      handleEvaluationResult(data);
+    } catch (e) {
+      setError("Failed to process audio: " + e.message);
+      setLockedUntilNext(false);
+    }
+  };
+
+  // Post total session points once session is completed (NOW includes per-item analytics)
   useEffect(() => {
     const postSessionScore = async () => {
-      setScorePostError(null);
-
       try {
         const token = await getToken();
-        if (!token) throw new Error("No auth token (are you signed in?)");
+        if (!token) return;
 
         const res = await fetch("http://localhost:8000/api/score", {
           method: "POST",
@@ -270,10 +279,11 @@ const handleUpload = async (audioBlob) => {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          // ✅ exp accumulates with score (backend should do gained_exp = delta_score)
           body: JSON.stringify({
             technique_id: TECHNIQUE_ID,
-            delta_score: score,
+            delta_score: sessionPoints,
+            session_size: sessionWords.length,
+            items: itemResults,
           }),
         });
 
@@ -287,25 +297,23 @@ const handleUpload = async (audioBlob) => {
     };
 
     if (completed && !postedSessionRef.current) {
-      postedSessionRef.current = true; // lock: only post once
+      postedSessionRef.current = true;
       postSessionScore();
     }
-  }, [completed, score, getToken]);
+  }, [completed, sessionPoints, sessionWords.length, itemResults, getToken]);
 
   const resetSession = () => {
     setSessionSeed((s) => s + 1);
   };
 
-  if (!sessionWords.length) {
-    return (
-      <div className="basic-speech-content">
-        <h1 className="basic-speech-title">Basic Speech Practice</h1>
-        <p>No word pairs found. Check wordPairs.json path + contents.</p>
-      </div>
-    );
-  }
-
   const recordDisabled = completed || isProcessing || lockedUntilNext;
+
+  const progressDisplay = Math.min(
+    currentIndex + (completed ? 0 : 1),
+    sessionWords.length
+  );
+
+  const cueLetter = !completed && currentItem ? getCue(currentItem.word) : "";
 
   return (
     <div className="basic-speech-content">
@@ -317,13 +325,18 @@ const handleUpload = async (audioBlob) => {
 
         <div style={{ marginTop: 10 }}>
           <strong>
-            Progress:{" "}
-            {Math.min(currentIndex + (completed ? 0 : 1), sessionWords.length)}/
-            {sessionWords.length}
+            Progress: {progressDisplay}/{sessionWords.length}
           </strong>
+
           <span style={{ marginLeft: 12 }}>
-            <strong>Score:</strong> {score}
+            <strong>Session points:</strong> {sessionPoints}
           </span>
+
+          {!completed && (
+            <span style={{ marginLeft: 12 }}>
+              <strong>Attempt:</strong> {attemptNum}/3
+            </span>
+          )}
         </div>
 
         <div className="practice-cards">
@@ -335,7 +348,23 @@ const handleUpload = async (audioBlob) => {
                   alt={currentItem.word}
                   className="practice-image"
                 />
+
+                {/* keep this if you want for debugging; in “real” use you’d hide the target */}
                 <p className="target-word">🎯 Target word: {currentItem.word}</p>
+
+                {/* cue UI */}
+                {showCue && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: 10,
+                      borderRadius: 10,
+                      border: "1px solid rgba(255,255,255,0.15)",
+                    }}
+                  >
+                    <strong>Cue:</strong> starts with <strong>{cueLetter}</strong>
+                  </div>
+                )}
               </div>
             )}
 
@@ -344,22 +373,11 @@ const handleUpload = async (audioBlob) => {
                 onClick={isRecording ? stopRecording : startRecording}
                 className={isRecording ? "recording" : ""}
                 disabled={recordDisabled && !isRecording}
-                title={
-                  lockedUntilNext
-                    ? "Wait for feedback / next image"
-                    : isProcessing
-                    ? "Processing audio..."
-                    : completed
-                    ? "Session completed"
-                    : ""
-                }
               >
                 {isRecording
                   ? "Stop Recording"
                   : isProcessing
                   ? "Processing..."
-                  : lockedUntilNext
-                  ? "Locked..."
                   : "Start Recording"}
               </button>
             </div>
@@ -375,7 +393,9 @@ const handleUpload = async (audioBlob) => {
               <div
                 className={`feedback-message ${feedback
                   .toLowerCase()
-                  .replace("!", "")}`}
+                  .replaceAll(" ", "-")
+                  .replaceAll("!", "")
+                  .replaceAll("—", "-")}`}
               >
                 {feedback}
               </div>
@@ -387,39 +407,18 @@ const handleUpload = async (audioBlob) => {
               <div style={{ marginTop: 14 }}>
                 <h3>Session Complete</h3>
                 <p>
-                  Final score: <strong>{score}</strong> / {sessionWords.length}
+                  Final points: <strong>{sessionPoints}</strong>
                 </p>
 
-                {/* ✅ Score POST status */}
-                <div style={{ marginTop: 10, fontSize: 13 }}>
-                  {scorePostError && (
-                    <div style={{ color: "crimson" }}>
-                      Failed to save score: {scorePostError}
-                    </div>
-                  )}
-
-                  {scorePostResult?.global && (
-                    <div>
-                      <strong>Saved.</strong> Global EXP:{" "}
-                      {scorePostResult.global.total_exp} | Streak:{" "}
-                      {scorePostResult.global.streak}
-                    </div>
-                  )}
-
-                  {scorePostResult?.technique && (
-                    <div>
-                      Technique ({scorePostResult.technique.technique_id}) EXP:{" "}
-                      {scorePostResult.technique.total_exp} | Best:{" "}
-                      {scorePostResult.technique.best_score} | Attempts:{" "}
-                      {scorePostResult.technique.attempts}
-                    </div>
-                  )}
-                </div>
+                {scorePostError && (
+                  <p className="error-message">
+                    Score post error: {scorePostError}
+                  </p>
+                )}
+                {scorePostResult && <p style={{ opacity: 0.9 }}>Score saved.</p>}
 
                 <div className="recording-section">
-                  <button onClick={resetSession} className="">
-                    Start New Session
-                  </button>
+                  <button onClick={resetSession}>Start New Session</button>
                 </div>
               </div>
             )}
