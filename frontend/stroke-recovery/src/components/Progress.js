@@ -3,11 +3,21 @@ import React, { useEffect, useMemo, useState } from "react";
 import { SignedIn, SignedOut, useAuth } from "@clerk/clerk-react";
 import "./Progress.css";
 
-const TECHNIQUE_ID = "image_naming";
+const TECHNIQUES = [
+  {
+    id: "image_naming",
+    label: "Image Naming",
+    tip: "Tip: If a word is hard, pause, breathe, then try again slowly — accuracy beats speed.",
+  },
+  {
+    id: "sentence_repetition",
+    label: "Sentence Repetition",
+    tip: "Tip: Focus on the key content words first, then add the small connecting words.",
+  },
+];
 
 // Simple leveling curve (tweak later)
 function expForLevel(level) {
-  // Level 1->2: 50, grows slowly
   return Math.floor(50 * Math.pow(1.15, level - 1));
 }
 
@@ -34,10 +44,13 @@ function computeLevel(totalExp) {
 export default function Progress() {
   const { getToken } = useAuth();
   const [me, setMe] = useState(null);
-  const [tech, setTech] = useState(null);
+  const [techStats, setTechStats] = useState({}); // { [id]: stats }
   const [error, setError] = useState(null);
 
-  const levelInfo = useMemo(() => computeLevel(me?.total_exp || 0), [me?.total_exp]);
+  const levelInfo = useMemo(
+    () => computeLevel(me?.total_exp || 0),
+    [me?.total_exp]
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -46,6 +59,7 @@ export default function Progress() {
         const token = await getToken();
         if (!token) return;
 
+        // Load global user stats
         const meRes = await fetch("http://localhost:8000/api/me", {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -53,13 +67,20 @@ export default function Progress() {
         if (!meRes.ok) throw new Error(meData?.detail || "Failed to load /api/me");
         setMe(meData);
 
-        const techRes = await fetch(
-          `http://localhost:8000/api/technique/${TECHNIQUE_ID}`,
-          { headers: { Authorization: `Bearer ${token}` } }
+        // Load technique stats (all techniques)
+        const results = await Promise.all(
+          TECHNIQUES.map(async (t) => {
+            const res = await fetch(
+              `http://localhost:8000/api/technique/${t.id}`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.detail || `Failed to load ${t.id}`);
+            return [t.id, data];
+          })
         );
-        const techData = await techRes.json();
-        if (!techRes.ok) throw new Error(techData?.detail || "Failed to load technique stats");
-        setTech(techData);
+
+        setTechStats(Object.fromEntries(results));
       } catch (e) {
         setError(String(e.message || e));
       }
@@ -81,7 +102,7 @@ export default function Progress() {
       <SignedIn>
         {error && <div className="progress-error">{error}</div>}
 
-        {/* Top row */}
+        {/* Overall card */}
         <div className="progress-grid">
           <div className="progress-card">
             <div className="progress-card-header">
@@ -124,31 +145,35 @@ export default function Progress() {
             </div>
           </div>
 
-          <div className="progress-card">
-            <div className="progress-card-header">
-              <h2>Technique</h2>
-              <span className="chip">Image Naming</span>
-            </div>
+          {/* Technique cards */}
+          {TECHNIQUES.map((t) => {
+            const tech = techStats[t.id];
+            return (
+              <div className="progress-card" key={t.id}>
+                <div className="progress-card-header">
+                  <h2>Technique</h2>
+                  <span className="chip">{t.label}</span>
+                </div>
 
-            <div className="stats-row">
-              <div className="stat">
-                <div className="stat-label">Technique EXP</div>
-                <div className="stat-value">{tech?.total_exp ?? 0}</div>
-              </div>
-              <div className="stat">
-                <div className="stat-label">Best Score</div>
-                <div className="stat-value">{tech?.best_score ?? 0}</div>
-              </div>
-              <div className="stat">
-                <div className="stat-label">Attempts</div>
-                <div className="stat-value">{tech?.attempts ?? 0}</div>
-              </div>
-            </div>
+                <div className="stats-row">
+                  <div className="stat">
+                    <div className="stat-label">Technique EXP</div>
+                    <div className="stat-value">{tech?.total_exp ?? 0}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="stat-label">Best Score</div>
+                    <div className="stat-value">{tech?.best_score ?? 0}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="stat-label">Attempts</div>
+                    <div className="stat-value">{tech?.attempts ?? 0}</div>
+                  </div>
+                </div>
 
-            <div className="progress-note">
-              Tip: Consistency matters more than intensity. Keep the streak alive.
-            </div>
-          </div>
+                <div className="progress-note">{t.tip}</div>
+              </div>
+            );
+          })}
         </div>
       </SignedIn>
     </div>

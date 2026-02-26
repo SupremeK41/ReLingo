@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import "../App.css";
 import "./BasicSpeech.css";
 
+import { useAuth } from "@clerk/clerk-react"; // ✅ NEW
 import sentenceData from "../data/sentenceProduction.json";
 
 const SESSION_SIZE = 5;
@@ -24,6 +25,8 @@ function pointsForAttempt(attemptNum) {
 }
 
 export default function SentenceRepetition() {
+  const { getToken } = useAuth(); // ✅ NEW
+
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lockedUntilNext, setLockedUntilNext] = useState(false);
@@ -41,6 +44,11 @@ export default function SentenceRepetition() {
   const streamRef = useRef(null);
 
   const [sessionSeed, setSessionSeed] = useState(0);
+
+  // ✅ NEW: post-once guard + result/error
+  const postedSessionRef = useRef(false);
+  const [scorePostResult, setScorePostResult] = useState(null);
+  const [scorePostError, setScorePostError] = useState(null);
 
   const [isMuted, setIsMuted] = useState(() => {
     try {
@@ -74,6 +82,7 @@ export default function SentenceRepetition() {
 
   useEffect(() => {
     if (feedback) speak(feedback);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feedback]);
 
   const toggleMute = () => {
@@ -99,6 +108,11 @@ export default function SentenceRepetition() {
     setIsRecording(false);
     setIsProcessing(false);
     lastSpokenRef.current = "";
+
+    // ✅ NEW resets for posting
+    postedSessionRef.current = false;
+    setScorePostResult(null);
+    setScorePostError(null);
   }, [sessionItems]);
 
   const nextItem = () => {
@@ -116,7 +130,7 @@ export default function SentenceRepetition() {
     }
   };
 
-  const finalizeItem = (scoreLevel, payload) => {
+  const finalizeItem = (scoreLevel) => {
     const pts = scoreLevel > 0 ? pointsForAttempt(attemptNum) : 0;
     setSessionPoints((p) => p + pts);
 
@@ -136,7 +150,7 @@ export default function SentenceRepetition() {
           ? "Correct! (+2)"
           : "Correct after cue! (+1)"
       );
-      finalizeItem(scoreLevel, payload);
+      finalizeItem(scoreLevel);
       return;
     }
 
@@ -155,7 +169,7 @@ export default function SentenceRepetition() {
     }
 
     setFeedback("Incorrect. (+0)");
-    finalizeItem(scoreLevel, payload);
+    finalizeItem(scoreLevel);
   };
 
   const startRecording = async () => {
@@ -228,6 +242,40 @@ export default function SentenceRepetition() {
     }
   };
 
+  // ✅ NEW: Post total session points once completed (same as BasicSpeech)
+  useEffect(() => {
+    const postSessionScore = async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+
+        const res = await fetch("http://localhost:8000/api/score", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            technique_id: TECHNIQUE_ID,
+            delta_score: sessionPoints,
+            session_size: sessionItems.length,
+          }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail || "Failed to submit score");
+        setScorePostResult(data);
+      } catch (e) {
+        setScorePostError(String(e.message || e));
+      }
+    };
+
+    if (completed && !postedSessionRef.current) {
+      postedSessionRef.current = true;
+      postSessionScore();
+    }
+  }, [completed, sessionPoints, sessionItems.length, getToken]);
+
   const recordDisabled = completed || isProcessing || lockedUntilNext;
 
   const progressDisplay = Math.min(
@@ -273,6 +321,7 @@ export default function SentenceRepetition() {
               cursor: "pointer",
               transition: "all 0.2s ease",
             }}
+            type="button"
           >
             {isMuted ? "🔇 Muted" : "🔊 Voice On"}
           </button>
@@ -336,6 +385,11 @@ export default function SentenceRepetition() {
                 <p>
                   Final points: <strong>{sessionPoints}</strong>
                 </p>
+
+                {scorePostError && (
+                  <p className="error-message">Score post error: {scorePostError}</p>
+                )}
+                {scorePostResult && <p style={{ opacity: 0.9 }}>Score saved.</p>}
 
                 <div className="recording-section">
                   <button onClick={() => setSessionSeed((s) => s + 1)}>
