@@ -1,14 +1,72 @@
 [
   {
+    "id": 1,
     "image": "KickingBall.jpg",
-    "sentence": "The boy is kicking the ball.",
+    "sentence": "The boy is kicking a ball.",
     "required_content": ["boy", "kicking", "ball"],
-    "required_function": ["the", "is"]
+    "required_function": ["the", "is", "a"]
   },
   {
+    "id": 2,
     "image": "WomanWater.jpg",
     "sentence": "The woman is drinking water.",
     "required_content": ["woman", "drinking", "water"],
     "required_function": ["the", "is"]
+  },
+  {
+    "id": 3,
+    "image": "GirlBook.jpg",
+    "sentence": "The girl is reading a book.",
+    "required_content": ["girl", "reading", "book"],
+    "required_function": ["the", "is", "a"]
+  },
+  {
+    "id": 4,
+    "image": "ManApple.jpg",
+    "sentence": "The man is eating an apple.",
+    "required_content": ["man", "eating", "apple"],
+    "required_function": ["the", "is", "an"]
+  },
+  {
+    "id": 5,
+    "image": "DogCat.jpg",
+    "sentence": "The dog is chasing the cat.",
+    "required_content": ["dog", "chasing", "cat"],
+    "required_function": ["the", "is"]
+  },
+  {
+    "id": 6,
+    "image": "ChildWashingHands.jpg",
+    "sentence": "The child is washing their hands.",
+    "required_content": ["child", "washing", "hands"],
+    "required_function": ["the", "is", "their"]
+  },
+  {
+    "id": 7,
+    "image": "ChefCooking.jpg",
+    "sentence": "The chef is cooking food.",
+    "required_content": ["chef", "cooking", "food"],
+    "required_function": ["the", "is"]
+  },
+  {
+    "id": 8,
+    "image": "ManDrivingCar.jpg",
+    "sentence": "The man is driving a car.",
+    "required_content": ["man", "driving", "car"],
+    "required_function": ["the", "is", "a"]
+  },
+  {
+    "id": 9,
+    "image": "BaseballThrowing.jpg",
+    "sentence": "The baseballer is throwing the ball.",
+    "required_content": ["baseballer", "throwing", "ball"],
+    "required_function": ["the", "is"]
+  },
+  {
+    "id": 10,
+    "image": "ArtistDrawing.jpg",
+    "sentence": "The artist is drawing a picture.",
+    "required_content": ["artist", "drawing", "picture"],
+    "required_function": ["the", "is", "a"]
   }
 ]
