@@ -472,6 +472,81 @@ async def speech_to_text(
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+            
+@app.post("/api/sentence-eval")
+async def sentence_eval(
+    audio: UploadFile = File(...),
+    target_sentence: str = Form(...),
+    required_content: str = Form(...),   # comma-separated
+    required_function: str = Form(...),  # comma-separated
+):
+    temp_path = f"temp_audio/{uuid.uuid4().hex}.webm"
+
+    try:
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(audio.file, buffer)
+
+        result = whisper_model.transcribe(
+            temp_path,
+            language="en",
+            task="transcribe",
+            temperature=0,
+            condition_on_previous_text=False,
+            no_speech_threshold=0.6,
+            logprob_threshold=-1.0,
+            compression_ratio_threshold=2.4,
+        )
+
+        text = (result.get("text") or "").strip()
+        transcript_norm = normalize_word(text)
+        transcript_tokens = transcript_norm.split()
+
+        target_norm = normalize_word(target_sentence)
+
+        content_list = [normalize_word(w) for w in required_content.split(",")]
+        function_list = [normalize_word(w) for w in required_function.split(",")]
+
+        # Count content hits
+        content_hits = sum(
+            1 for w in content_list
+            if any(is_match_phonetic(tok, w)[0] for tok in transcript_tokens)
+        )
+
+        # Count function hits
+        function_hits = sum(
+            1 for w in function_list
+            if w in transcript_tokens
+        )
+
+        # Sentence-level similarity
+        dist = levenshtein(transcript_norm, target_norm)
+        max_len = max(len(transcript_norm), len(target_norm))
+        rel_distance = dist / max_len if max_len else 1.0
+
+        # Scoring tier
+        if content_hits == len(content_list) and rel_distance <= 0.25:
+            score_level = 3
+        elif content_hits == len(content_list):
+            score_level = 2
+        elif content_hits >= max(1, len(content_list) - 1):
+            score_level = 1
+        else:
+            score_level = 0
+
+        return {
+            "text": text,
+            "content_hits": content_hits,
+            "function_hits": function_hits,
+            "rel_distance": rel_distance,
+            "score_level": score_level,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 # ------------------ OPTIONAL GPT FEEDBACK ------------------
 

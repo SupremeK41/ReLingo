@@ -8,6 +8,7 @@ import AboutUs from "./components/AboutUs";
 import Learning from "./components/Learning";
 import BasicSpeech from "./components/BasicSpeech";
 import Progress from "./components/Progress";
+import SentenceRepetition from "./components/SentenceRepetition";
 
 
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
@@ -80,6 +81,7 @@ function App() {
         <Route path="/about" element={<AboutUs />} />
         <Route path="/learning" element={<Learning />} />
         <Route path="/basic-speech" element={<BasicSpeech />} />
+        <Route path="/sentence-repetition" element={<SentenceRepetition/>} />
         <Route path="/progress" element={<Progress />} />
       </Routes>
     </div>

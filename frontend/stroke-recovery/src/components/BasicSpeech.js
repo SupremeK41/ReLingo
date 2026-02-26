@@ -162,6 +162,47 @@ export default function BasicSpeech() {
     }, 1200);
   };
 
+  function speak(text) {
+  if (isMuted) return;
+  if (!("speechSynthesis" in window)) return;
+
+  window.speechSynthesis.cancel(); // stop any ongoing speech
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 0.9;      // slightly slower for clarity
+  utterance.pitch = 1;
+  utterance.volume = 1;
+
+  window.speechSynthesis.speak(utterance);
+}
+  useEffect(() => {
+    if (!feedback) return;
+    speak(feedback);
+    }, [feedback]);
+
+  const [isMuted, setIsMuted] = useState(() => {
+  try {
+    return localStorage.getItem("relingo_muted") === "1";
+  } catch {
+    return false;
+  }
+});
+
+useEffect(() => {
+  try {
+    localStorage.setItem("relingo_muted", isMuted ? "1" : "0");
+  } catch {}
+}, [isMuted]);
+
+const toggleMute = () => {
+  setIsMuted((m) => {
+    const next = !m;
+    if (next && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    return next;
+  });
+};
+
+
   const handleEvaluationResult = (payload) => {
     // NEW: no-speech / too-short guard -> do NOT consume an attempt
     if (isNoSpeech(payload)) {
@@ -358,6 +399,24 @@ export default function BasicSpeech() {
               <strong>Attempt:</strong> {attemptNum}/3
             </span>
           )}
+          <button
+            onClick={toggleMute}
+            style={{
+              marginLeft: 14,
+              padding: "6px 12px",
+              borderRadius: "20px",
+              border: "1px solid rgba(255,255,255,0.2)",
+              background: isMuted
+                ? "rgba(255, 80, 80, 0.15)"
+                : "rgba(80, 200, 120, 0.15)",
+              color: "inherit",
+              fontWeight: 500,
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+          >
+            {isMuted ? "🔇 Muted" : "🔊 Voice On"}
+          </button>
         </div>
 
         <div className="practice-cards">

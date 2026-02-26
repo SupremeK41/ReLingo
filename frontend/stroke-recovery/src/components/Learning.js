@@ -3,6 +3,7 @@ import '../App.css';
 import './Learning.css';
 import { useNavigate, Routes, Route } from 'react-router-dom';
 import BasicSpeech from './BasicSpeech';
+import SentenceRepetition from './SentenceRepetition';
 
 function Learning() {
     const navigate = useNavigate();
@@ -17,15 +18,16 @@ function Learning() {
       
       <div className="learning-sections">
         <div className="learning-card">
-          <h2>Basic Speech</h2>
-          <p>Begin with simple words and phrases</p>
+          <h2>Image Naming</h2>
+          <p>Begin with simple image naming exercises</p>
           <button className="learning-button" onClick={handleBasicSpeechClick}>Start</button>
         </div>
 
         <div className="learning-card">
-          <h2>Intermediate</h2>
-          <p>Practice with sentences and descriptions</p>
-          <button className="learning-button">Start</button>
+          <h2>Sentence Repetition</h2>
+          <p>Practice completing sentences with correct words</p>
+          <button className="learning-button" onClick={() => navigate('/sentence-repetition')}>Start</button>
+          
         </div>
 
         <div className="learning-card">
@@ -36,6 +38,7 @@ function Learning() {
       </div>
       <Routes>
         <Route path="/basic-speech" element={<BasicSpeech/>} />
+        <Route path="/sentence-repetition" element={<SentenceRepetition/>} />
       </Routes>
     </div>
   );

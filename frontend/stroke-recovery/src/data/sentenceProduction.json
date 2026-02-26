@@ -1,0 +1,14 @@
+[
+  {
+    "image": "KickingBall.jpg",
+    "sentence": "The boy is kicking the ball.",
+    "required_content": ["boy", "kicking", "ball"],
+    "required_function": ["the", "is"]
+  },
+  {
+    "image": "WomanWater.jpg",
+    "sentence": "The woman is drinking water.",
+    "required_content": ["woman", "drinking", "water"],
+    "required_function": ["the", "is"]
+  }
+]
