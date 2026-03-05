@@ -31,16 +31,28 @@ def _pick_catalog_image(
     want_tags: list[str],
     difficulty: int,
     technique_id: str,
+    word: str | None = None,   # NEW
 ) -> str | None:
     """
-    Returns best image file from catalog (curated-first).
-    Only returns an image if there is at least 1 tag overlap.
+    Strategy:
+    1) If image_naming and word provided -> exact match by word first.
+    2) Otherwise tag overlap matching, but ONLY accept if overlap > 0.
     """
-    want = set(_norm(t) for t in (want_tags or []) if t)
-    if not want:
-        return None
+    # 1) Exact word match (image naming)
+    if technique_id == "image_naming" and word:
+        w = _norm(word)
+        for it in catalog:
+            if it.get("technique") and it.get("technique") != technique_id:
+                continue
+            if int(it.get("difficulty", 1)) > int(difficulty):
+                continue
+            if _norm(it.get("word", "")) == w:
+                return it.get("file")
 
-    candidates: list[tuple[int, dict]] = []
+    # 2) Tag overlap match
+    want = set(_norm(t) for t in (want_tags or []) if t)
+    best_file = None
+    best_overlap = 0
 
     for it in catalog:
         if it.get("technique") and it.get("technique") != technique_id:
@@ -51,16 +63,15 @@ def _pick_catalog_image(
         tags = set(_norm(t) for t in (it.get("tags") or []))
         overlap = len(want & tags)
 
-        # only consider if we have at least 1 shared tag
-        if overlap > 0:
-            candidates.append((overlap, it))
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_file = it.get("file")
 
-    if not candidates:
+    # IMPORTANT: if no overlap, return None so you hit placeholder/fallback
+    if best_overlap <= 0:
         return None
 
-    # highest overlap wins
-    candidates.sort(key=lambda x: x[0], reverse=True)
-    return candidates[0][1].get("file")
+    return best_file
 
 
 # ------------ Strict JSON helpers ------------
@@ -311,8 +322,21 @@ def attach_images_from_catalog(items: list[dict], catalog: list[dict], technique
     out: list[dict] = []
     for it in items:
         tags = it.get("tags") or []
-        img = _pick_catalog_image(catalog, tags, difficulty=difficulty, technique_id=technique_id)
-
+        if technique_id == "image_naming":
+            img = _pick_catalog_image(
+            catalog,
+            tags,
+            difficulty=difficulty,
+            technique_id=technique_id,
+            word=it.get("word", ""),
+        )
+        else:
+            img = _pick_catalog_image(
+            catalog,
+            tags,
+            difficulty=difficulty,
+            technique_id=technique_id,
+        )
         if technique_id == "image_naming":
             out.append({
                 "word": (it.get("word") or "").strip(),
