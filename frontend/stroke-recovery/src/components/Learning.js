@@ -5,6 +5,7 @@ import { useNavigate, Routes, Route } from 'react-router-dom';
 import BasicSpeech from './BasicSpeech';
 import SentenceRepetition from './SentenceRepetition';
 
+
 function Learning() {
     const navigate = useNavigate();
 

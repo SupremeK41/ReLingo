@@ -8,6 +8,7 @@ import wordPairs from "../data/wordPairs.json";
 
 const SESSION_SIZE = 10;
 const TECHNIQUE_ID = "image_naming";
+const API_BASE = "http://localhost:8000";
 
 function shuffle(arr) {
   const a = [...arr];
@@ -32,17 +33,14 @@ function pointsForAttempt(attemptNum) {
 
 // Backend "no-speech" guard: do NOT consume an attempt
 function isNoSpeech(payload) {
-  // backend returns text="" when too_short/no_speech_prob gating triggers
   if (!payload) return false;
   const t = (payload.text || "").trim();
   if (t !== "") return false;
 
-  // accept any of these flags (we added too_short/no_speech_prob in backend)
   if (payload.too_short) return true;
   if (typeof payload.no_speech_prob === "number" && payload.no_speech_prob >= 0.8) return true;
   if (payload.prompt_leak) return true;
 
-  // fallback: empty text with no best_guess + no distances likely means "didn't catch"
   if (payload.best_guess == null && payload.distance == null && payload.rel_distance == null) return true;
 
   return false;
@@ -51,10 +49,18 @@ function isNoSpeech(payload) {
 export default function BasicSpeech() {
   const { getToken } = useAuth();
 
+  // -------------------------
+  // NEW: content source
+  // -------------------------
+  const [contentSource, setContentSource] = useState("local"); // "pack" | "local"
+  const [baseItems, setBaseItems] = useState(wordPairs); // [{word,image}]
+  const [packError, setPackError] = useState(null);
+
+  // -------------------------
+  // Existing state
+  // -------------------------
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-
-  // keep this to avoid accidental double-record/double-eval for same attempt
   const [lockedUntilNext, setLockedUntilNext] = useState(false);
 
   const [audioResult, setAudioResult] = useState("");
@@ -63,11 +69,8 @@ export default function BasicSpeech() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [feedback, setFeedback] = useState("");
 
-  // NEW: clinically meaningful points
   const [sessionPoints, setSessionPoints] = useState(0);
 
-  // NEW: attempt logic per item
-  // 1 = first attempt, 2 = second attempt, 3 = "after cue" attempt
   const [attemptNum, setAttemptNum] = useState(1);
   const [showCue, setShowCue] = useState(false);
 
@@ -83,13 +86,108 @@ export default function BasicSpeech() {
   const [sessionSeed, setSessionSeed] = useState(0);
   const postedSessionRef = useRef(false);
 
-  // Optional: per-item breakdown (handy for debugging / future analytics)
   const [itemResults, setItemResults] = useState([]);
 
+  // -------------------------
+  // Mute / TTS
+  // -------------------------
+  const [isMuted, setIsMuted] = useState(() => {
+    try {
+      return localStorage.getItem("relingo_muted") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("relingo_muted", isMuted ? "1" : "0");
+    } catch {}
+  }, [isMuted]);
+
+  const toggleMute = () => {
+    setIsMuted((m) => {
+      const next = !m;
+      if (next && "speechSynthesis" in window) window.speechSynthesis.cancel();
+      return next;
+    });
+  };
+
+  function speak(text) {
+    if (isMuted) return;
+    if (!text) return;
+    if (!("speechSynthesis" in window)) return;
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  useEffect(() => {
+    if (!feedback) return;
+    speak(feedback);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedback]);
+
+  // -------------------------
+  // NEW: load active pack (image_naming) once user is signed in
+  // -------------------------
+  useEffect(() => {
+    const loadPack = async () => {
+      setPackError(null);
+
+      try {
+        const token = await getToken();
+        if (!token) {
+          setContentSource("local");
+          setBaseItems(wordPairs);
+          return;
+        }
+
+        const res = await fetch(`${API_BASE}/api/content-pack/active/${TECHNIQUE_ID}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail || "Failed to load content pack");
+
+        const items = Array.isArray(data?.items) ? data.items : [];
+
+        // Expecting items like: { word, image }
+        const cleaned = items
+          .map((it) => ({
+            word: String(it?.word || "").trim(),
+            image: String(it?.image || "").trim(),
+          }))
+          .filter((it) => it.word);
+
+        if (cleaned.length > 0) {
+          setContentSource("pack");
+          setBaseItems(cleaned);
+        } else {
+          setContentSource("local");
+          setBaseItems(wordPairs);
+        }
+      } catch (e) {
+        setPackError(String(e.message || e));
+        setContentSource("local");
+        setBaseItems(wordPairs);
+      }
+    };
+
+    loadPack();
+  }, [getToken]);
+
+  // -------------------------
+  // Session words derived from baseItems (pack OR local)
+  // -------------------------
   const sessionWords = useMemo(() => {
-    const shuffled = shuffle(wordPairs);
+    const shuffled = shuffle(baseItems || []);
     return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
-  }, [sessionSeed]);
+  }, [sessionSeed, baseItems]);
 
   const currentItem = sessionWords[currentIndex];
 
@@ -107,7 +205,6 @@ export default function BasicSpeech() {
     setScorePostError(null);
     postedSessionRef.current = false;
 
-    // NEW resets
     setSessionPoints(0);
     setAttemptNum(1);
     setShowCue(false);
@@ -122,7 +219,6 @@ export default function BasicSpeech() {
 
     setLockedUntilNext(false);
 
-    // NEW resets
     setAttemptNum(1);
     setShowCue(false);
   };
@@ -156,59 +252,15 @@ export default function BasicSpeech() {
       },
     ]);
 
-    // brief feedback then move on
     setTimeout(() => {
       nextItem();
     }, 1200);
   };
 
-  function speak(text) {
-  if (isMuted) return;
-  if (!("speechSynthesis" in window)) return;
-
-  window.speechSynthesis.cancel(); // stop any ongoing speech
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 0.9;      // slightly slower for clarity
-  utterance.pitch = 1;
-  utterance.volume = 1;
-
-  window.speechSynthesis.speak(utterance);
-}
-  useEffect(() => {
-    if (!feedback) return;
-    speak(feedback);
-    }, [feedback]);
-
-  const [isMuted, setIsMuted] = useState(() => {
-  try {
-    return localStorage.getItem("relingo_muted") === "1";
-  } catch {
-    return false;
-  }
-});
-
-useEffect(() => {
-  try {
-    localStorage.setItem("relingo_muted", isMuted ? "1" : "0");
-  } catch {}
-}, [isMuted]);
-
-const toggleMute = () => {
-  setIsMuted((m) => {
-    const next = !m;
-    if (next && "speechSynthesis" in window) window.speechSynthesis.cancel();
-    return next;
-  });
-};
-
-
   const handleEvaluationResult = (payload) => {
-    // NEW: no-speech / too-short guard -> do NOT consume an attempt
     if (isNoSpeech(payload)) {
       setFeedback("Didn’t catch that—try speaking a bit longer.");
       setLockedUntilNext(false);
-      // keep attemptNum the same, do not show cue, do not progress
       return;
     }
 
@@ -227,12 +279,11 @@ const toggleMute = () => {
       return;
     }
 
-    // Not matched:
     if (attemptNum === 1) {
       setFeedback("Incorrect — here’s a cue. Try again.");
       setShowCue(true);
       setAttemptNum(2);
-      setLockedUntilNext(false); // unlock so they can record again
+      setLockedUntilNext(false);
       return;
     }
 
@@ -244,7 +295,6 @@ const toggleMute = () => {
       return;
     }
 
-    // attemptNum === 3 and still incorrect -> 0 points
     setFeedback("Incorrect. (+0)");
     finalizeCurrentItem({ awardedPoints: 0, payload });
   };
@@ -304,12 +354,11 @@ const toggleMute = () => {
 
     formData.append("target", currentItem.word);
 
-    // Optional: send attempt/cue info (backend accepts)
     formData.append("attempt_num", String(attemptNum));
     formData.append("cue_shown", showCue ? "1" : "0");
 
     try {
-      const response = await fetch("http://localhost:8000/api/speech-to-text", {
+      const response = await fetch(`${API_BASE}/api/speech-to-text`, {
         method: "POST",
         body: formData,
       });
@@ -328,14 +377,14 @@ const toggleMute = () => {
     }
   };
 
-  // Post total session points once session is completed (NOW includes per-item analytics)
+  // Post total session points once session is completed
   useEffect(() => {
     const postSessionScore = async () => {
       try {
         const token = await getToken();
         if (!token) return;
 
-        const res = await fetch("http://localhost:8000/api/score", {
+        const res = await fetch(`${API_BASE}/api/score`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -399,6 +448,11 @@ const toggleMute = () => {
               <strong>Attempt:</strong> {attemptNum}/3
             </span>
           )}
+
+          <span style={{ marginLeft: 12, opacity: 0.85 }}>
+            <strong>Source:</strong> {contentSource === "pack" ? "Personalised" : "Default"}
+          </span>
+
           <button
             onClick={toggleMute}
             style={{
@@ -406,18 +460,23 @@ const toggleMute = () => {
               padding: "6px 12px",
               borderRadius: "20px",
               border: "1px solid rgba(255,255,255,0.2)",
-              background: isMuted
-                ? "rgba(255, 80, 80, 0.15)"
-                : "rgba(80, 200, 120, 0.15)",
+              background: isMuted ? "rgba(255, 80, 80, 0.15)" : "rgba(80, 200, 120, 0.15)",
               color: "inherit",
               fontWeight: 500,
               cursor: "pointer",
               transition: "all 0.2s ease",
             }}
+            type="button"
           >
             {isMuted ? "🔇 Muted" : "🔊 Voice On"}
           </button>
         </div>
+
+        {packError && (
+          <div style={{ marginTop: 10, opacity: 0.8 }}>
+            Personalised pack unavailable → using default set.
+          </div>
+        )}
 
         <div className="practice-cards">
           <div className="practice-card">
@@ -429,10 +488,8 @@ const toggleMute = () => {
                   className="practice-image"
                 />
 
-                {/* keep this if you want for debugging; in “real” use you’d hide the target */}
                 <p className="target-word">🎯 Target word: {currentItem.word}</p>
 
-                {/* cue UI */}
                 {showCue && (
                   <div
                     style={{
@@ -454,11 +511,7 @@ const toggleMute = () => {
                 className={isRecording ? "recording" : ""}
                 disabled={recordDisabled && !isRecording}
               >
-                {isRecording
-                  ? "Stop Recording"
-                  : isProcessing
-                  ? "Processing..."
-                  : "Start Recording"}
+                {isRecording ? "Stop Recording" : isProcessing ? "Processing..." : "Start Recording"}
               </button>
             </div>
 
@@ -491,9 +544,7 @@ const toggleMute = () => {
                 </p>
 
                 {scorePostError && (
-                  <p className="error-message">
-                    Score post error: {scorePostError}
-                  </p>
+                  <p className="error-message">Score post error: {scorePostError}</p>
                 )}
                 {scorePostResult && <p style={{ opacity: 0.9 }}>Score saved.</p>}
 

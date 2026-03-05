@@ -9,6 +9,7 @@ import Learning from "./components/Learning";
 import BasicSpeech from "./components/BasicSpeech";
 import Progress from "./components/Progress";
 import SentenceRepetition from "./components/SentenceRepetition";
+import Personalisation from "./components/Personalisation";
 
 
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
@@ -62,6 +63,7 @@ function App() {
           <button onClick={handleAboutClick}>About Us</button>
           <button onClick={handleLearningClick}>Start Learning</button>
           <button onClick={() => navigate("/progress")}>Progress</button>
+          <button onClick={() => navigate("/personalisation")}>Personalisation</button>
 
 
           <SignedOut>
@@ -83,6 +85,7 @@ function App() {
         <Route path="/basic-speech" element={<BasicSpeech />} />
         <Route path="/sentence-repetition" element={<SentenceRepetition/>} />
         <Route path="/progress" element={<Progress />} />
+        <Route path="/personalisation" element={<Personalisation />} />
       </Routes>
     </div>
   );

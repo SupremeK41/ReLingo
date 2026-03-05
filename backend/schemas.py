@@ -1,4 +1,9 @@
-# schemas.py (UPDATED)
+# schemas.py (FINAL - stats + personalisation + content packs)
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Optional
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -30,12 +35,58 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     clerk_user_id: str
-    email: str | None = None
+    email: Optional[str] = None
 
     total_exp: int
     best_daily_score: int
     streak: int
-    last_active_date: str | None = None
+    last_active_date: Optional[str] = None
 
-    today_points: int | None = None
-    today_sessions: int | None = None
+    # daily rollups (populated by /api/me)
+    today_points: Optional[int] = None
+    today_sessions: Optional[int] = None
+
+
+# ---------------------------
+# Personalisation schemas
+# ---------------------------
+
+class UserProfileIn(BaseModel):
+    interests_text: str = ""
+    avoid_topics_text: Optional[str] = None
+
+    # 1=easy 2=medium 3=hard
+    difficulty: int = 1
+
+    # 1=short 2=medium 3=long
+    sentence_length: int = 1
+
+    cue_enabled: bool = True
+    allow_generated_images: bool = False
+
+
+class UserProfileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    interests_text: str
+    avoid_topics_text: Optional[str] = None
+    difficulty: int
+    sentence_length: int
+    cue_enabled: bool
+    allow_generated_images: bool
+
+    updated_at: Optional[datetime] = None
+
+
+class ContentPackOut(BaseModel):
+    """
+    Wrapper response for any technique-specific pack.
+    items is intentionally Any because shapes differ by technique.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    technique_id: str
+    difficulty: int
+    generated_at: str
+    pack_id: str
+    items: list[Any]

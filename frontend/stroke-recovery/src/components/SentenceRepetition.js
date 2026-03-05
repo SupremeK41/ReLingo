@@ -3,11 +3,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import "../App.css";
 import "./BasicSpeech.css";
 
-import { useAuth } from "@clerk/clerk-react"; // ✅ NEW
+import { useAuth } from "@clerk/clerk-react";
 import sentenceData from "../data/sentenceProduction.json";
 
 const SESSION_SIZE = 5;
 const TECHNIQUE_ID = "sentence_repetition";
+const API_BASE = "http://localhost:8000";
 
 function shuffle(arr) {
   const a = [...arr];
@@ -21,11 +22,23 @@ function shuffle(arr) {
 function pointsForAttempt(attemptNum) {
   if (attemptNum === 1) return 3;
   if (attemptNum === 2) return 2;
-  return 1;
+  return 1; // attempt 3
+}
+
+// "Correct" threshold for sentence repetition in your backend:
+function isCorrect(scoreLevel) {
+  return Number(scoreLevel) >= 2;
 }
 
 export default function SentenceRepetition() {
-  const { getToken } = useAuth(); // ✅ NEW
+  const { getToken } = useAuth();
+
+  // -------------------------
+  // NEW: content source
+  // -------------------------
+  const [contentSource, setContentSource] = useState("local"); // "pack" | "local"
+  const [baseItems, setBaseItems] = useState(sentenceData);
+  const [packError, setPackError] = useState(null);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -45,10 +58,13 @@ export default function SentenceRepetition() {
 
   const [sessionSeed, setSessionSeed] = useState(0);
 
-  // ✅ NEW: post-once guard + result/error
+  // post-once guard + result/error
   const postedSessionRef = useRef(false);
   const [scorePostResult, setScorePostResult] = useState(null);
   const [scorePostError, setScorePostError] = useState(null);
+
+  // per-item breakdown (matches backend ScoreItem)
+  const [itemResults, setItemResults] = useState([]);
 
   const [isMuted, setIsMuted] = useState(() => {
     try {
@@ -59,10 +75,62 @@ export default function SentenceRepetition() {
   });
   const lastSpokenRef = useRef("");
 
+  // -------------------------
+  // NEW: load active pack for sentence repetition
+  // -------------------------
+  useEffect(() => {
+    const loadPack = async () => {
+      setPackError(null);
+
+      try {
+        const token = await getToken();
+        if (!token) {
+          setContentSource("local");
+          setBaseItems(sentenceData);
+          return;
+        }
+
+        const res = await fetch(`${API_BASE}/api/content-pack/active/${TECHNIQUE_ID}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail || "Failed to load content pack");
+
+        const items = Array.isArray(data?.items) ? data.items : [];
+
+        // Expect items like:
+        // { sentence, image, required_content:[...], required_function:[...] }
+        const cleaned = items
+          .map((it) => ({
+            sentence: String(it?.sentence || "").trim(),
+            image: String(it?.image || "").trim(),
+            required_content: Array.isArray(it?.required_content) ? it.required_content : [],
+            required_function: Array.isArray(it?.required_function) ? it.required_function : [],
+          }))
+          .filter((it) => it.sentence);
+
+        if (cleaned.length > 0) {
+          setContentSource("pack");
+          setBaseItems(cleaned);
+        } else {
+          setContentSource("local");
+          setBaseItems(sentenceData);
+        }
+      } catch (e) {
+        setPackError(String(e.message || e));
+        setContentSource("local");
+        setBaseItems(sentenceData);
+      }
+    };
+
+    loadPack();
+  }, [getToken]);
+
   const sessionItems = useMemo(() => {
-    const shuffled = shuffle(sentenceData);
+    const shuffled = shuffle(baseItems || []);
     return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
-  }, [sessionSeed]);
+  }, [sessionSeed, baseItems]);
 
   const currentItem = sessionItems[currentIndex];
 
@@ -109,10 +177,11 @@ export default function SentenceRepetition() {
     setIsProcessing(false);
     lastSpokenRef.current = "";
 
-    // ✅ NEW resets for posting
+    // reset posting + items
     postedSessionRef.current = false;
     setScorePostResult(null);
     setScorePostError(null);
+    setItemResults([]);
   }, [sessionItems]);
 
   const nextItem = () => {
@@ -130,9 +199,23 @@ export default function SentenceRepetition() {
     }
   };
 
-  const finalizeItem = (scoreLevel) => {
-    const pts = scoreLevel > 0 ? pointsForAttempt(attemptNum) : 0;
-    setSessionPoints((p) => p + pts);
+  const finalizeItem = ({ awardedPoints, payload, scoreLevel }) => {
+    const targetSentence = currentItem?.sentence || "";
+
+    setSessionPoints((p) => p + awardedPoints);
+
+    setItemResults((prev) => [
+      ...prev,
+      {
+        target: targetSentence,
+        awardedPoints,
+        attemptsUsed: attemptNum,
+        cueShown: false,
+        transcript: payload?.text || "",
+        best_guess: null,
+        matched: isCorrect(scoreLevel),
+      },
+    ]);
 
     setTimeout(() => {
       nextItem();
@@ -142,15 +225,16 @@ export default function SentenceRepetition() {
   const handleEvaluation = (payload) => {
     const scoreLevel = Number(payload?.score_level ?? 0);
 
-    if (scoreLevel >= 2) {
+    if (isCorrect(scoreLevel)) {
+      const pts = pointsForAttempt(attemptNum);
       setFeedback(
         attemptNum === 1
           ? "Correct sentence! (+3)"
           : attemptNum === 2
           ? "Correct! (+2)"
-          : "Correct after cue! (+1)"
+          : "Correct! (+1)"
       );
-      finalizeItem(scoreLevel);
+      finalizeItem({ awardedPoints: pts, payload, scoreLevel });
       return;
     }
 
@@ -169,7 +253,7 @@ export default function SentenceRepetition() {
     }
 
     setFeedback("Incorrect. (+0)");
-    finalizeItem(scoreLevel);
+    finalizeItem({ awardedPoints: 0, payload, scoreLevel });
   };
 
   const startRecording = async () => {
@@ -219,14 +303,18 @@ export default function SentenceRepetition() {
   const sendAudio = async (blob) => {
     if (!currentItem) return;
 
+    // If a personalised pack item is missing required_* arrays, we avoid crashing:
+    const reqContent = Array.isArray(currentItem.required_content) ? currentItem.required_content : [];
+    const reqFunction = Array.isArray(currentItem.required_function) ? currentItem.required_function : [];
+
     const formData = new FormData();
     formData.append("audio", blob, "recording.webm");
     formData.append("target_sentence", currentItem.sentence);
-    formData.append("required_content", currentItem.required_content.join(","));
-    formData.append("required_function", currentItem.required_function.join(","));
+    formData.append("required_content", reqContent.join(","));
+    formData.append("required_function", reqFunction.join(","));
 
     try {
-      const res = await fetch("http://localhost:8000/api/sentence-eval", {
+      const res = await fetch(`${API_BASE}/api/sentence-eval`, {
         method: "POST",
         body: formData,
       });
@@ -242,14 +330,14 @@ export default function SentenceRepetition() {
     }
   };
 
-  // ✅ NEW: Post total session points once completed (same as BasicSpeech)
+  // Post total session points once completed (with per-item breakdown)
   useEffect(() => {
     const postSessionScore = async () => {
       try {
         const token = await getToken();
         if (!token) return;
 
-        const res = await fetch("http://localhost:8000/api/score", {
+        const res = await fetch(`${API_BASE}/api/score`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -259,6 +347,7 @@ export default function SentenceRepetition() {
             technique_id: TECHNIQUE_ID,
             delta_score: sessionPoints,
             session_size: sessionItems.length,
+            items: itemResults,
           }),
         });
 
@@ -274,7 +363,7 @@ export default function SentenceRepetition() {
       postedSessionRef.current = true;
       postSessionScore();
     }
-  }, [completed, sessionPoints, sessionItems.length, getToken]);
+  }, [completed, sessionPoints, sessionItems.length, itemResults, getToken]);
 
   const recordDisabled = completed || isProcessing || lockedUntilNext;
 
@@ -306,6 +395,10 @@ export default function SentenceRepetition() {
             </span>
           )}
 
+          <span style={{ marginLeft: 12, opacity: 0.85 }}>
+            <strong>Source:</strong> {contentSource === "pack" ? "Personalised" : "Default"}
+          </span>
+
           <button
             onClick={toggleMute}
             style={{
@@ -313,9 +406,7 @@ export default function SentenceRepetition() {
               padding: "6px 12px",
               borderRadius: "20px",
               border: "1px solid rgba(255,255,255,0.2)",
-              background: isMuted
-                ? "rgba(255, 80, 80, 0.15)"
-                : "rgba(80, 200, 120, 0.15)",
+              background: isMuted ? "rgba(255, 80, 80, 0.15)" : "rgba(80, 200, 120, 0.15)",
               color: "inherit",
               fontWeight: 500,
               cursor: "pointer",
@@ -326,6 +417,12 @@ export default function SentenceRepetition() {
             {isMuted ? "🔇 Muted" : "🔊 Voice On"}
           </button>
         </div>
+
+        {packError && (
+          <div style={{ marginTop: 10, opacity: 0.8 }}>
+            Personalised pack unavailable → using default set.
+          </div>
+        )}
 
         <div className="practice-cards">
           <div className="practice-card">

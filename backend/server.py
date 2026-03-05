@@ -1,4 +1,5 @@
-# server.py (UPDATED - hallucination-resistant Whisper + SHORT-AUDIO guard + no-speech gating)
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from tortoise.contrib.fastapi import register_tortoise
@@ -6,23 +7,29 @@ from metaphone import doublemetaphone
 
 import whisper
 import shutil
-import os
-from dotenv import load_dotenv
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 import re
 import uuid
 
-import openai
+from openai import OpenAI
 from pydantic import BaseModel
 
 from auth_clerk import require_clerk_user_id
-from models import User, UserTechniqueStats, UserDailyStats
-from schemas import UserOut
+from models import (
+    User,
+    UserTechniqueStats,
+    UserDailyStats,
+    UserProfile,
+    UserContentPack,
+)
+from schemas import UserOut, UserProfileIn, UserProfileOut, ContentPackOut
 
+# NEW: use your real pack builder
+from personalisation import build_content_pack
 # ------------------ ENV + KEYS ------------------
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ------------------ APP + CORS ------------------
 
@@ -133,6 +140,26 @@ async def get_or_create_user(clerk_user_id: str) -> User:
         )
     return user
 
+async def get_or_create_profile(user: User) -> UserProfile:
+    prof = await UserProfile.get_or_none(user=user)
+    if not prof:
+        prof = await UserProfile.create(user=user)
+    return prof
+
+
+def _now_iso() -> str:
+    return datetime.utcnow().isoformat()
+
+
+def _pack_wrapper(technique_id: str, difficulty: int, items: list[dict]) -> dict:
+    return {
+        "pack_id": uuid.uuid4().hex,
+        "technique_id": technique_id,
+        "difficulty": difficulty,
+        "generated_at": _now_iso(),
+        "items": items,
+    }
+
 # ------------------ USER ROUTES ------------------
 
 @app.get("/api/me", response_model=UserOut)
@@ -151,6 +178,142 @@ async def me(clerk_user_id: str = Depends(require_clerk_user_id)):
         last_active_date=user.last_active_date,
         today_points=daily.points if daily else 0,
         today_sessions=daily.sessions_played if daily else 0,
+    )
+    
+# ------------------ PERSONALISATION ------------------
+
+@app.get("/api/personalisation", response_model=UserProfileOut)
+async def get_personalisation(clerk_user_id: str = Depends(require_clerk_user_id)):
+    user = await get_or_create_user(clerk_user_id)
+    prof = await get_or_create_profile(user)
+
+    return UserProfileOut(
+        interests_text=prof.interests_text or "",
+        avoid_topics_text=prof.avoid_topics_text,
+        difficulty=prof.difficulty,
+        sentence_length=prof.sentence_length,
+        cue_enabled=prof.cue_enabled,
+        allow_generated_images=prof.allow_generated_images,
+        updated_at=prof.updated_at,
+    )
+
+
+@app.post("/api/personalisation", response_model=UserProfileOut)
+async def save_personalisation(
+    payload: UserProfileIn,
+    clerk_user_id: str = Depends(require_clerk_user_id),
+):
+    user = await get_or_create_user(clerk_user_id)
+    prof = await get_or_create_profile(user)
+
+    prof.interests_text = payload.interests_text or ""
+    prof.avoid_topics_text = payload.avoid_topics_text
+    prof.difficulty = max(1, min(3, int(payload.difficulty or 1)))
+    prof.sentence_length = max(1, min(3, int(payload.sentence_length or 1)))
+    prof.cue_enabled = bool(payload.cue_enabled)
+    prof.allow_generated_images = bool(payload.allow_generated_images)
+
+    await prof.save()
+
+    return UserProfileOut(
+        interests_text=prof.interests_text or "",
+        avoid_topics_text=prof.avoid_topics_text,
+        difficulty=prof.difficulty,
+        sentence_length=prof.sentence_length,
+        cue_enabled=prof.cue_enabled,
+        allow_generated_images=prof.allow_generated_images,
+        updated_at=prof.updated_at,
+    )
+
+
+class GeneratePackPayload(BaseModel):
+    technique_id: str
+    n_items: int | None = 10
+    # optional override; otherwise use profile difficulty/sentence_length
+    difficulty: int | None = None
+
+
+@app.post("/api/personalisation/generate", response_model=ContentPackOut)
+async def generate_personalised_pack(
+    payload: GeneratePackPayload,
+    clerk_user_id: str = Depends(require_clerk_user_id),
+):
+    user = await get_or_create_user(clerk_user_id)
+    prof = await get_or_create_profile(user)
+
+    technique_id = (payload.technique_id or "").strip()
+    if not technique_id:
+        raise HTTPException(status_code=400, detail="technique_id is required")
+
+    n_items = int(payload.n_items or 10)
+    n_items = max(1, min(25, n_items))  # clamp so you don’t accidentally generate 500 items
+
+    # Build a profile dict for personalisation.py
+    profile_dict = {
+        "interests_text": prof.interests_text or "",
+        "avoid_topics_text": prof.avoid_topics_text or "",
+        "difficulty": int(payload.difficulty or prof.difficulty or 1),
+        "sentence_length": int(prof.sentence_length or 1),
+        "cue_enabled": bool(prof.cue_enabled),
+        "allow_generated_images": bool(prof.allow_generated_images),
+    }
+
+    try:
+        pack =  build_content_pack(profile_dict, technique_id, n_items=n_items)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate pack: {str(e)}")
+
+    # Upsert active pack row for this user+technique
+    existing = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
+    if existing:
+        existing.difficulty = int(pack.get("difficulty") or profile_dict["difficulty"])
+        existing.pack_json = pack
+        await existing.save()
+    else:
+        await UserContentPack.create(
+            user=user,
+            technique_id=technique_id,
+            difficulty=int(pack.get("difficulty") or profile_dict["difficulty"]),
+            pack_json=pack,
+        )
+
+    return ContentPackOut(
+        technique_id=pack["technique_id"],
+        difficulty=int(pack["difficulty"]),
+        generated_at=pack["generated_at"],
+        pack_id=pack["pack_id"],
+        items=pack["items"],
+    )
+
+@app.get("/api/content-pack/active/{technique_id}", response_model=ContentPackOut)
+async def get_active_pack(
+    technique_id: str,
+    clerk_user_id: str = Depends(require_clerk_user_id),
+):
+    technique_id = (technique_id or "").strip()
+    if technique_id not in ("image_naming", "sentence_repetition"):
+        raise HTTPException(status_code=400, detail="Unknown technique_id")
+
+    user = await get_or_create_user(clerk_user_id)
+
+    row = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
+    if not row or not row.pack_json:
+        # frontend should fall back to curated JSON
+        return ContentPackOut(
+            technique_id=technique_id,
+            difficulty=1,
+            generated_at=datetime.utcnow().isoformat() + "Z",
+            pack_id=uuid.uuid4().hex,
+            items=[],
+        )
+
+    pack = row.pack_json
+    return ContentPackOut(
+        technique_id=pack.get("technique_id", technique_id),
+        difficulty=int(pack.get("difficulty", row.difficulty or 1)),
+        generated_at=pack.get("generated_at", datetime.utcnow().isoformat() + "Z"),
+        pack_id=pack.get("pack_id", uuid.uuid4().hex),
+        items=pack.get("items", []),
     )
 
 # ------------------ SCORE PAYLOAD (CLINICAL) ------------------
