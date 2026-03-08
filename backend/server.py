@@ -19,6 +19,7 @@ from models import (
     User,
     UserTechniqueStats,
     UserDailyStats,
+    UserDailyTechniqueStats,
     UserProfile,
     UserContentPack,
 )
@@ -328,6 +329,9 @@ class ScoreItem(BaseModel):
     best_guess: str | None = None
     matched: bool | None = None
 
+    # sentence repetition metric (0.0 -> 1.0)
+    sentence_accuracy: float | None = None
+    
 class ScorePayload(BaseModel):
     technique_id: str
     delta_score: int              # session points total
@@ -347,7 +351,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     today = date.today().isoformat()
     yesterday = (date.today() - timedelta(days=1)).isoformat()
 
-    # ---- streak logic (unchanged) ----
+    # ---- streak logic ----
     if user.last_active_date == today:
         pass
     elif user.last_active_date == yesterday:
@@ -362,7 +366,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     user.total_exp += session_points
     await user.save()
 
-    # ---- daily aggregation ----
+    # ---- daily overall aggregation ----
     daily = await UserDailyStats.get_or_none(user=user, day=today)
     if not daily:
         daily = await UserDailyStats.create(user=user, day=today, points=0, sessions_played=0)
@@ -374,7 +378,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     user.best_daily_score = max(_safe_int(user.best_daily_score), _safe_int(daily.points))
     await user.save()
 
-    # ---- per-technique aggregation ----
+    # ---- lifetime per-technique aggregation ----
     stats = await UserTechniqueStats.get_or_none(user=user, technique_id=payload.technique_id)
     if not stats:
         stats = await UserTechniqueStats.create(
@@ -392,43 +396,112 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
             correct_second=0,
             correct_after_cue=0,
             incorrect=0,
+            total_sentence_accuracy=0.0,
+            sentence_items_evaluated=0,
+            best_sentence_accuracy=0.0,
         )
 
-    # legacy mirrors
+    # ---- daily per-technique aggregation ----
+    daily_tech = await UserDailyTechniqueStats.get_or_none(
+        user=user,
+        technique_id=payload.technique_id,
+        day=today,
+    )
+    if not daily_tech:
+        daily_tech = await UserDailyTechniqueStats.create(
+            user=user,
+            technique_id=payload.technique_id,
+            day=today,
+            points=0,
+            sessions_played=0,
+            total_items=0,
+            total_attempts=0,
+            correct_first=0,
+            correct_second=0,
+            correct_after_cue=0,
+            incorrect=0,
+            total_sentence_accuracy=0.0,
+            sentence_items_evaluated=0,
+        )
+
+    # ---- legacy mirrors ----
     stats.attempts += 1
     stats.total_exp += session_points
     stats.best_score = max(_safe_int(stats.best_score), session_points)
 
-    # new fields
+    # ---- lifetime technique fields ----
     stats.sessions_played += 1
     stats.total_points += session_points
     stats.best_session_points = max(_safe_int(stats.best_session_points), session_points)
+
+    # ---- daily technique fields ----
+    daily_tech.sessions_played += 1
+    daily_tech.points += session_points
 
     items = payload.items or []
     session_size = payload.session_size or (len(items) if items else 0)
 
     if session_size:
         stats.total_items += _safe_int(session_size)
+        daily_tech.total_items += _safe_int(session_size)
+
+    session_avg_sentence_accuracy = None
 
     if items:
-        stats.total_attempts += sum(max(0, _safe_int(it.attemptsUsed)) for it in items)
+        attempts_sum = sum(max(0, _safe_int(it.attemptsUsed)) for it in items)
+
+        stats.total_attempts += attempts_sum
+        daily_tech.total_attempts += attempts_sum
+
         for it in items:
             pts = _safe_int(it.awardedPoints)
+
             if pts == 3:
                 stats.correct_first += 1
+                daily_tech.correct_first += 1
             elif pts == 2:
                 stats.correct_second += 1
+                daily_tech.correct_second += 1
             elif pts == 1:
                 stats.correct_after_cue += 1
+                daily_tech.correct_after_cue += 1
             else:
                 stats.incorrect += 1
+                daily_tech.incorrect += 1
+
+        # sentence repetition accuracy tracking
+        if payload.technique_id == "sentence_repetition":
+            sentence_accuracies = [
+                float(it.sentence_accuracy)
+                for it in items
+                if it.sentence_accuracy is not None
+            ]
+
+            if sentence_accuracies:
+                session_avg_sentence_accuracy = sum(sentence_accuracies) / len(sentence_accuracies)
+
+                stats.total_sentence_accuracy += sum(sentence_accuracies)
+                stats.sentence_items_evaluated += len(sentence_accuracies)
+                stats.best_sentence_accuracy = max(
+                    float(stats.best_sentence_accuracy or 0.0),
+                    session_avg_sentence_accuracy
+                )
+
+                daily_tech.total_sentence_accuracy += sum(sentence_accuracies)
+                daily_tech.sentence_items_evaluated += len(sentence_accuracies)
 
     await stats.save()
+    await daily_tech.save()
 
     avg_attempts = None
     if items:
         total_attempts = sum(max(0, _safe_int(it.attemptsUsed)) for it in items)
         avg_attempts = total_attempts / max(1, len(items))
+
+    lifetime_avg_sentence_accuracy = (
+        stats.total_sentence_accuracy / stats.sentence_items_evaluated
+        if stats.sentence_items_evaluated > 0 else 0.0
+    )
 
     return {
         "global": {
@@ -445,7 +518,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
             "total_exp": stats.total_exp,
             "best_score": stats.best_score,
             "attempts": stats.attempts,
-            # new
+            # lifetime
             "total_points": stats.total_points,
             "best_session_points": stats.best_session_points,
             "sessions_played": stats.sessions_played,
@@ -455,14 +528,33 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
             "correct_second": stats.correct_second,
             "correct_after_cue": stats.correct_after_cue,
             "incorrect": stats.incorrect,
+            "total_sentence_accuracy": stats.total_sentence_accuracy,
+            "sentence_items_evaluated": stats.sentence_items_evaluated,
+            "best_sentence_accuracy": stats.best_sentence_accuracy,
+            "lifetime_avg_sentence_accuracy": round(lifetime_avg_sentence_accuracy, 4),
+        },
+        "daily_technique": {
+            "technique_id": daily_tech.technique_id,
+            "day": daily_tech.day,
+            "points": daily_tech.points,
+            "sessions_played": daily_tech.sessions_played,
+            "total_items": daily_tech.total_items,
+            "total_attempts": daily_tech.total_attempts,
+            "correct_first": daily_tech.correct_first,
+            "correct_second": daily_tech.correct_second,
+            "correct_after_cue": daily_tech.correct_after_cue,
+            "incorrect": daily_tech.incorrect,
+            "total_sentence_accuracy": daily_tech.total_sentence_accuracy,
+            "sentence_items_evaluated": daily_tech.sentence_items_evaluated,
         },
         "analytics": {
             "session_points": session_points,
             "session_size": session_size,
             "avg_attempts": avg_attempts,
+            "session_avg_sentence_accuracy": round(session_avg_sentence_accuracy, 4)
+            if session_avg_sentence_accuracy is not None else None,
         },
     }
-
 # ------------------ LOCAL WHISPER ENDPOINT ------------------
 # Fix hallucinations: safe prompt + repetition thresholds + no previous text conditioning
 # PLUS: short-audio guard + no-speech gating so tiny clips return empty transcript
@@ -669,7 +761,7 @@ async def sentence_eval(
         content_list = [normalize_word(w) for w in required_content.split(",")]
         function_list = [normalize_word(w) for w in required_function.split(",")]
 
-        # Count content hits
+                # Count content hits
         content_hits = sum(
             1 for w in content_list
             if any(is_match_phonetic(tok, w)[0] for tok in transcript_tokens)
@@ -685,13 +777,25 @@ async def sentence_eval(
         dist = levenshtein(transcript_norm, target_norm)
         max_len = max(len(transcript_norm), len(target_norm))
         rel_distance = dist / max_len if max_len else 1.0
+        similarity_score = max(0.0, 1.0 - rel_distance)
 
-        # Scoring tier
-        if content_hits == len(content_list) and rel_distance <= 0.25:
+        # Accuracy components
+        content_accuracy = content_hits / max(1, len(content_list))
+        function_accuracy = function_hits / max(1, len(function_list)) if function_list else 1.0
+
+        # Weighted overall sentence accuracy
+        weighted_accuracy = (
+            0.6 * content_accuracy +
+            0.2 * function_accuracy +
+            0.2 * similarity_score
+        )
+
+        # Graded scoring tier
+        if content_accuracy >= 0.8 and weighted_accuracy >= 0.75:
             score_level = 3
-        elif content_hits == len(content_list):
+        elif content_accuracy >= 0.6 and weighted_accuracy >= 0.55:
             score_level = 2
-        elif content_hits >= max(1, len(content_list) - 1):
+        elif content_accuracy >= 0.4:
             score_level = 1
         else:
             score_level = 0
@@ -700,7 +804,11 @@ async def sentence_eval(
             "text": text,
             "content_hits": content_hits,
             "function_hits": function_hits,
-            "rel_distance": rel_distance,
+            "content_accuracy": round(content_accuracy, 4),
+            "function_accuracy": round(function_accuracy, 4),
+            "similarity_score": round(similarity_score, 4),
+            "weighted_accuracy": round(weighted_accuracy, 4),
+            "rel_distance": round(rel_distance, 4),
             "score_level": score_level,
         }
 
@@ -728,6 +836,120 @@ async def speech_feedback(userText: str = File(...), correctAnswer: str = File(.
         raise HTTPException(status_code=500, detail=f"GPT feedback failed: {str(e)}")
 
 # ------------------ TECHNIQUE STATS ------------------
+@app.get("/api/progress/summary")
+async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_id)):
+    user = await get_or_create_user(clerk_user_id)
+
+    today = date.today()
+    days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+
+    # ---- overall daily points ----
+    daily_rows = await UserDailyStats.filter(user=user, day__in=days).all()
+    daily_map = {row.day: row for row in daily_rows}
+
+    daily_points = []
+    for d in days:
+        row = daily_map.get(d)
+        daily_points.append({
+            "day": d,
+            "points": row.points if row else 0,
+            "sessions": row.sessions_played if row else 0,
+        })
+
+    # ---- lifetime technique summaries ----
+    technique_rows = await UserTechniqueStats.filter(user=user).all()
+    techniques = {}
+
+    for row in technique_rows:
+        lifetime_avg_sentence_accuracy = (
+            row.total_sentence_accuracy / row.sentence_items_evaluated
+            if row.sentence_items_evaluated > 0 else 0.0
+        )
+
+        avg_attempts_per_item = (
+            row.total_attempts / row.total_items
+            if row.total_items > 0 else 0.0
+        )
+
+        first_try_accuracy = (
+            row.correct_first / row.total_items
+            if row.total_items > 0 else 0.0
+        )
+
+        techniques[row.technique_id] = {
+            "technique_id": row.technique_id,
+            "total_exp": row.total_exp,
+            "best_score": row.best_score,
+            "attempts": row.attempts,
+            "total_points": row.total_points,
+            "best_session_points": row.best_session_points,
+            "sessions_played": row.sessions_played,
+            "total_items": row.total_items,
+            "total_attempts": row.total_attempts,
+            "correct_first": row.correct_first,
+            "correct_second": row.correct_second,
+            "correct_after_cue": row.correct_after_cue,
+            "incorrect": row.incorrect,
+            "total_sentence_accuracy": row.total_sentence_accuracy,
+            "sentence_items_evaluated": row.sentence_items_evaluated,
+            "best_sentence_accuracy": row.best_sentence_accuracy,
+            "lifetime_avg_sentence_accuracy": round(lifetime_avg_sentence_accuracy, 4),
+            "avg_attempts_per_item": round(avg_attempts_per_item, 2),
+            "first_try_accuracy": round(first_try_accuracy, 4),
+        }
+
+    # ---- 7-day daily technique history ----
+    daily_tech_rows = await UserDailyTechniqueStats.filter(user=user, day__in=days).all()
+
+    by_technique_day = {}
+    for row in daily_tech_rows:
+        by_technique_day[(row.technique_id, row.day)] = row
+
+    technique_history = {}
+    technique_ids = {"image_naming", "sentence_repetition"}
+
+    for technique_id in technique_ids:
+        series = []
+
+        for d in days:
+            row = by_technique_day.get((technique_id, d))
+
+            points = row.points if row else 0
+            sessions_played = row.sessions_played if row else 0
+            total_items = row.total_items if row else 0
+            total_attempts = row.total_attempts if row else 0
+            correct_first = row.correct_first if row else 0
+            total_sentence_accuracy = row.total_sentence_accuracy if row else 0.0
+            sentence_items_evaluated = row.sentence_items_evaluated if row else 0
+
+            first_try_accuracy = (
+                correct_first / total_items if total_items > 0 else 0.0
+            )
+            avg_attempts_per_item = (
+                total_attempts / total_items if total_items > 0 else 0.0
+            )
+            sentence_accuracy = (
+                total_sentence_accuracy / sentence_items_evaluated
+                if sentence_items_evaluated > 0 else 0.0
+            )
+
+            series.append({
+                "day": d,
+                "points": points,
+                "sessions": sessions_played,
+                "first_try_accuracy": round(first_try_accuracy, 4),
+                "avg_attempts_per_item": round(avg_attempts_per_item, 2),
+                "sentence_accuracy": round(sentence_accuracy, 4),
+                "total_items": total_items,
+            })
+
+        technique_history[technique_id] = series
+
+    return {
+        "daily_points": daily_points,
+        "techniques": techniques,
+        "technique_history": technique_history,
+    }
 
 @app.get("/api/technique/{technique_id}")
 async def get_technique_stats(
@@ -738,7 +960,7 @@ async def get_technique_stats(
     stats = await UserTechniqueStats.get_or_none(user=user, technique_id=technique_id)
 
     if not stats:
-        return {
+                return {
             "technique_id": technique_id,
             # legacy
             "total_exp": 0,
@@ -754,7 +976,16 @@ async def get_technique_stats(
             "correct_second": 0,
             "correct_after_cue": 0,
             "incorrect": 0,
+            "total_sentence_accuracy": 0.0,
+            "sentence_items_evaluated": 0,
+            "best_sentence_accuracy": 0.0,
+            "lifetime_avg_sentence_accuracy": 0.0,
         }
+
+    lifetime_avg_sentence_accuracy = (
+        stats.total_sentence_accuracy / stats.sentence_items_evaluated
+        if stats.sentence_items_evaluated > 0 else 0.0
+    )
 
     return {
         "technique_id": stats.technique_id,
@@ -772,6 +1003,10 @@ async def get_technique_stats(
         "correct_second": stats.correct_second,
         "correct_after_cue": stats.correct_after_cue,
         "incorrect": stats.incorrect,
+        "total_sentence_accuracy": stats.total_sentence_accuracy,
+        "sentence_items_evaluated": stats.sentence_items_evaluated,
+        "best_sentence_accuracy": stats.best_sentence_accuracy,
+        "lifetime_avg_sentence_accuracy": round(lifetime_avg_sentence_accuracy, 4),
     }
 
 # ------------------ DATABASE ------------------

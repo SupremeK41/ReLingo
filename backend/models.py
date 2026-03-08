@@ -1,4 +1,4 @@
-# models.py (FINAL - daily stats + technique rollups + personalisation packs)
+# models.py
 from tortoise.models import Model
 from tortoise import fields
 
@@ -23,7 +23,7 @@ class User(Model):
 
 class UserDailyStats(Model):
     """
-    Per-day rollups so best_daily_score is meaningful.
+    Per-day overall rollups so best_daily_score is meaningful.
     """
     id = fields.IntField(pk=True)
 
@@ -36,7 +36,7 @@ class UserDailyStats(Model):
     day = fields.CharField(max_length=20)  # ISO date yyyy-mm-dd
 
     points = fields.IntField(default=0)           # total points earned that day
-    sessions_played = fields.IntField(default=0)  # sessions completed that day
+    sessions_played = fields.IntField(default=0)  # total sessions completed that day
 
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -46,7 +46,7 @@ class UserDailyStats(Model):
 
 class UserTechniqueStats(Model):
     """
-    Per-technique aggregates.
+    Lifetime per-technique aggregates.
 
     Legacy fields kept so older frontend won't break:
       - total_exp mirrors total_points
@@ -67,7 +67,7 @@ class UserTechniqueStats(Model):
     best_score = fields.IntField(default=0)
     attempts = fields.IntField(default=0)
 
-    # ---- new rollups ----
+    # ---- lifetime rollups ----
     total_points = fields.IntField(default=0)
     best_session_points = fields.IntField(default=0)
     sessions_played = fields.IntField(default=0)
@@ -80,10 +80,57 @@ class UserTechniqueStats(Model):
     correct_after_cue = fields.IntField(default=0)    # 1 point
     incorrect = fields.IntField(default=0)            # 0 points
 
+    # Sentence repetition metric (lifetime)
+    total_sentence_accuracy = fields.FloatField(default=0.0)
+    sentence_items_evaluated = fields.IntField(default=0)
+    best_sentence_accuracy = fields.FloatField(default=0.0)
+
     updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
         unique_together = (("user", "technique_id"),)
+
+
+class UserDailyTechniqueStats(Model):
+    """
+    Per-day, per-technique history for graphs and progress tracking.
+
+    This lets you show 7-day trends for:
+    - points
+    - sessions
+    - first try accuracy
+    - average attempts per item
+    - sentence accuracy
+    """
+    id = fields.IntField(pk=True)
+
+    user = fields.ForeignKeyField(
+        "models.User",
+        related_name="daily_technique_stats",
+        on_delete=fields.CASCADE,
+    )
+
+    technique_id = fields.CharField(max_length=50)
+    day = fields.CharField(max_length=20)  # ISO date yyyy-mm-dd
+
+    points = fields.IntField(default=0)
+    sessions_played = fields.IntField(default=0)
+
+    total_items = fields.IntField(default=0)
+    total_attempts = fields.IntField(default=0)
+
+    correct_first = fields.IntField(default=0)
+    correct_second = fields.IntField(default=0)
+    correct_after_cue = fields.IntField(default=0)
+    incorrect = fields.IntField(default=0)
+
+    total_sentence_accuracy = fields.FloatField(default=0.0)
+    sentence_items_evaluated = fields.IntField(default=0)
+
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        unique_together = (("user", "technique_id", "day"),)
 
 
 # ---------------------------
@@ -148,7 +195,6 @@ class UserContentPack(Model):
     updated_at = fields.DatetimeField(auto_now=True)
 
     class Meta:
-        # keep one active pack per technique (enforced in server logic)
         indexes = (("user_id", "technique_id"),)
 
 
@@ -176,7 +222,7 @@ class ImageAsset(Model):
     # e.g. "/SentenceImages/boy_kicking_ball.jpg"
     file_path = fields.CharField(max_length=255)
 
-    # For generated caching later (don’t enforce unique yet for MVP)
+    # For generated caching later
     prompt_hash = fields.CharField(max_length=128, null=True)
 
     created_at = fields.DatetimeField(auto_now_add=True)

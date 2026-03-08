@@ -10,7 +10,6 @@ const SESSION_SIZE = 5;
 const TECHNIQUE_ID = "sentence_repetition";
 const API_BASE = "http://localhost:8000";
 
-
 function resolveImagePath(image) {
   if (!image) return "/placeholder.jpg";
   if (image.startsWith("/")) return image;
@@ -212,7 +211,8 @@ export default function SentenceRepetition() {
       setLockedUntilNext(false);
     } else {
       setCompleted(true);
-      setFeedback("Practice completed!");
+      setFeedback("");
+      setAudioResult("");
       setLockedUntilNext(false);
     }
   };
@@ -232,6 +232,10 @@ export default function SentenceRepetition() {
         transcript: payload?.text || "",
         best_guess: null,
         matched: isCorrect(scoreLevel),
+        sentence_accuracy:
+          typeof payload?.weighted_accuracy === "number"
+            ? payload.weighted_accuracy
+            : null,
       },
     ]);
 
@@ -245,12 +249,17 @@ export default function SentenceRepetition() {
 
     if (isCorrect(scoreLevel)) {
       const pts = pointsForAttempt(attemptNum);
+      const acc =
+        typeof payload?.weighted_accuracy === "number"
+          ? ` (${Math.round(payload.weighted_accuracy * 100)}%)`
+          : "";
+
       setFeedback(
         attemptNum === 1
-          ? "Correct sentence! (+3)"
+          ? `Correct sentence! (+3)${acc}`
           : attemptNum === 2
-          ? "Correct! (+2)"
-          : "Correct! (+1)"
+          ? `Correct! (+2)${acc}`
+          : `Correct! (+1)${acc}`
       );
       finalizeItem({ awardedPoints: pts, payload, scoreLevel });
       return;
@@ -270,7 +279,11 @@ export default function SentenceRepetition() {
       return;
     }
 
-    setFeedback("Incorrect. (+0)");
+    const acc =
+      typeof payload?.weighted_accuracy === "number"
+        ? ` (${Math.round(payload.weighted_accuracy * 100)}%)`
+        : "";
+    setFeedback(`Incorrect. (+0)${acc}`);
     finalizeItem({ awardedPoints: 0, payload, scoreLevel });
   };
 
@@ -444,45 +457,48 @@ export default function SentenceRepetition() {
 
         <div className="practice-cards">
           <div className="practice-card">
-            {!completed && currentItem && (
-              <div className="image-container">
-                <img
-                  src={resolveImagePath(currentItem.image)}
-                  alt="Sentence prompt"
-                  className="practice-image"
-                />
+            {!completed ? (
+              currentItem && (
+                <div className="image-container">
+                  <img
+                    src={resolveImagePath(currentItem.image)}
+                    alt="Sentence prompt"
+                    className="practice-image"
+                  />
 
-                <div style={{ marginTop: 14, textAlign: "center" }}>
-                  <h3 style={{ marginBottom: 8 }}>Say:</h3>
-                  <p style={{ fontSize: 22, fontWeight: 700 }}>
-                    {currentItem.sentence}
-                  </p>
+                  <div style={{ marginTop: 14, textAlign: "center" }}>
+                    <h3 style={{ marginBottom: 8 }}>Say:</h3>
+                    <p style={{ fontSize: 22, fontWeight: 700 }}>
+                      {currentItem.sentence}
+                    </p>
+                  </div>
                 </div>
+              )
+            ) : null}
+            {!completed && (
+              <div className="recording-section">
+                <button
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={isRecording ? "recording" : ""}
+                  disabled={recordDisabled && !isRecording}
+                >
+                  {isRecording
+                    ? "Stop Recording"
+                    : isProcessing
+                    ? "Processing..."
+                    : "Start Recording"}
+                </button>
               </div>
             )}
 
-            <div className="recording-section">
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                className={isRecording ? "recording" : ""}
-                disabled={recordDisabled && !isRecording}
-              >
-                {isRecording
-                  ? "Stop Recording"
-                  : isProcessing
-                  ? "Processing..."
-                  : "Start Recording"}
-              </button>
-            </div>
-
-            {audioResult && (
+            {!completed && audioResult && (
               <div className="result-section">
                 <h4>🗣️ You said:</h4>
                 <p>{audioResult}</p>
               </div>
             )}
 
-            {feedback && (
+            {!completed && feedback && (
               <div
                 className={`feedback-message ${feedback
                   .toLowerCase()
@@ -497,13 +513,33 @@ export default function SentenceRepetition() {
             {completed && (
               <div style={{ marginTop: 14 }}>
                 <h3>Session Complete</h3>
+
                 <p>
                   Final points: <strong>{sessionPoints}</strong>
                 </p>
 
+                {scorePostResult?.analytics?.session_avg_sentence_accuracy != null && (
+                  <p>
+                    Average sentence accuracy:{" "}
+                    <strong>
+                      {Math.round(scorePostResult.analytics.session_avg_sentence_accuracy * 100)}%
+                    </strong>
+                  </p>
+                )}
+
+                {scorePostResult?.technique?.lifetime_avg_sentence_accuracy != null && (
+                  <p>
+                    Lifetime sentence accuracy:{" "}
+                    <strong>
+                      {Math.round(scorePostResult.technique.lifetime_avg_sentence_accuracy * 100)}%
+                    </strong>
+                  </p>
+                )}
+
                 {scorePostError && (
                   <p className="error-message">Score post error: {scorePostError}</p>
                 )}
+
                 {scorePostResult && <p style={{ opacity: 0.9 }}>Score saved.</p>}
 
                 <div className="recording-section">
