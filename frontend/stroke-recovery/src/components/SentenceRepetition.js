@@ -10,6 +10,24 @@ const SESSION_SIZE = 5;
 const TECHNIQUE_ID = "sentence_repetition";
 const API_BASE = "http://localhost:8000";
 
+
+function resolveImagePath(image) {
+  if (!image) return "/placeholder.jpg";
+  if (image.startsWith("/")) return image;
+
+  if (
+    image.startsWith("images/") ||
+    image.startsWith("SentenceImages/") ||
+    image.startsWith("arasaac_images/") ||
+    image.startsWith("arasaac_sentence_images/") ||
+    image.startsWith("generated/")
+  ) {
+    return `/${image}`;
+  }
+
+  return `/images/${image}`;
+}
+
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -429,7 +447,7 @@ export default function SentenceRepetition() {
             {!completed && currentItem && (
               <div className="image-container">
                 <img
-                  src={`/SentenceImages/${currentItem.image}`}
+                  src={resolveImagePath(currentItem.image)}
                   alt="Sentence prompt"
                   className="practice-image"
                 />

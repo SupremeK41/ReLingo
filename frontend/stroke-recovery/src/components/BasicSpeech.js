@@ -483,10 +483,10 @@ export default function BasicSpeech() {
             {!completed && currentItem && (
               <div className="image-container">
                 <img
-                  src={`/images/${currentItem.image}`}
-                  alt={currentItem.word}
-                  className="practice-image"
-                />
+                src={currentItem.image.startsWith("/") ? currentItem.image : `/${currentItem.image}`}
+                alt={currentItem.word}
+                className="practice-image"
+              />
 
                 <p className="target-word">🎯 Target word: {currentItem.word}</p>
 
