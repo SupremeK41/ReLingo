@@ -25,14 +25,10 @@ from models import (
 )
 from schemas import UserOut, UserProfileIn, UserProfileOut, ContentPackOut
 
-# NEW: use your real pack builder
 from personalisation import build_content_pack
-# ------------------ ENV + KEYS ------------------
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# ------------------ APP + CORS ------------------
 
 app = FastAPI()
 
@@ -44,18 +40,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ------------------ WHISPER SETUP ------------------
-
 whisper_model = whisper.load_model("base")
 
 if not os.path.exists("temp_audio"):
     os.makedirs("temp_audio")
+
 
 def normalize_word(s: str) -> str:
     s = s.lower()
     s = re.sub(r"[^\w\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
 
 def singularize_simple(w: str) -> str:
     if w.endswith("ies") and len(w) > 3:
@@ -65,6 +61,7 @@ def singularize_simple(w: str) -> str:
     if w.endswith("s") and len(w) > 1:
         return w[:-1]
     return w
+
 
 def levenshtein(a: str, b: str) -> int:
     if a == b:
@@ -85,6 +82,7 @@ def levenshtein(a: str, b: str) -> int:
         prev = cur
     return prev[-1]
 
+
 def allowed_distance(max_len: int) -> int:
     if max_len <= 3:
         return 1
@@ -92,9 +90,11 @@ def allowed_distance(max_len: int) -> int:
         return 2
     return 3
 
+
 def phonetic_codes(w: str) -> set[str]:
     a, b = doublemetaphone(w)
     return {c for c in (a, b) if c}
+
 
 def is_match_phonetic(word: str, target: str) -> tuple[bool, int, float, bool]:
     """
@@ -112,7 +112,6 @@ def is_match_phonetic(word: str, target: str) -> tuple[bool, int, float, bool]:
     max_len = max(len(w), len(t))
     rel = dist / max_len if max_len else 1.0
 
-    # keep your tolerance as-is (you can bump rel to 0.30 later if needed)
     if dist <= allowed_distance(max_len) or rel <= 0.25:
         return (True, dist, rel, False)
 
@@ -124,9 +123,53 @@ def is_match_phonetic(word: str, target: str) -> tuple[bool, int, float, bool]:
 
     return (False, dist, rel, False)
 
+
+def build_phrase_candidates(transcript_norm: str, target_text: str) -> list[str]:
+    """
+    Build candidate phrases from the transcript so multi-word targets
+    can still match even if Whisper adds extra words before/after.
+    """
+    if not transcript_norm:
+        return [""]
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add_candidate(x: str) -> None:
+        x = normalize_word(x)
+        if x and x not in seen:
+            seen.add(x)
+            out.append(x)
+
+    add_candidate(transcript_norm)
+
+    transcript_tokens = transcript_norm.split()
+    target_tokens = normalize_word(target_text).split() if target_text else []
+
+    for tok in transcript_tokens:
+        add_candidate(tok)
+
+    if target_tokens:
+        n = len(target_tokens)
+
+        # exact target-length ngrams
+        for i in range(len(transcript_tokens) - n + 1):
+            add_candidate(" ".join(transcript_tokens[i:i + n]))
+
+        # one shorter / one longer windows for tolerance
+        for extra_n in {max(1, n - 1), n + 1}:
+            if extra_n <= 0:
+                continue
+            for i in range(len(transcript_tokens) - extra_n + 1):
+                add_candidate(" ".join(transcript_tokens[i:i + extra_n]))
+
+    return out
+
+
 @app.get("/")
 def index():
     return {"message": "Welcome to ReLingo API – see /docs for Swagger UI"}
+
 
 async def get_or_create_user(clerk_user_id: str) -> User:
     user = await User.get_or_none(clerk_user_id=clerk_user_id)
@@ -140,6 +183,7 @@ async def get_or_create_user(clerk_user_id: str) -> User:
             last_active_date=None,
         )
     return user
+
 
 async def get_or_create_profile(user: User) -> UserProfile:
     prof = await UserProfile.get_or_none(user=user)
@@ -161,7 +205,6 @@ def _pack_wrapper(technique_id: str, difficulty: int, items: list[dict]) -> dict
         "items": items,
     }
 
-# ------------------ USER ROUTES ------------------
 
 @app.get("/api/me", response_model=UserOut)
 async def me(clerk_user_id: str = Depends(require_clerk_user_id)):
@@ -180,8 +223,7 @@ async def me(clerk_user_id: str = Depends(require_clerk_user_id)):
         today_points=daily.points if daily else 0,
         today_sessions=daily.sessions_played if daily else 0,
     )
-    
-# ------------------ PERSONALISATION ------------------
+
 
 @app.get("/api/personalisation", response_model=UserProfileOut)
 async def get_personalisation(clerk_user_id: str = Depends(require_clerk_user_id)):
@@ -230,7 +272,6 @@ async def save_personalisation(
 class GeneratePackPayload(BaseModel):
     technique_id: str
     n_items: int | None = 10
-    # optional override; otherwise use profile difficulty/sentence_length
     difficulty: int | None = None
 
 
@@ -247,9 +288,8 @@ async def generate_personalised_pack(
         raise HTTPException(status_code=400, detail="technique_id is required")
 
     n_items = int(payload.n_items or 10)
-    n_items = max(1, min(25, n_items))  # clamp so you don’t accidentally generate 500 items
+    n_items = max(1, min(25, n_items))
 
-    # Build a profile dict for personalisation.py
     profile_dict = {
         "interests_text": prof.interests_text or "",
         "avoid_topics_text": prof.avoid_topics_text or "",
@@ -260,11 +300,10 @@ async def generate_personalised_pack(
     }
 
     try:
-        pack =  await build_content_pack(profile_dict, technique_id, n_items=n_items)
+        pack = await build_content_pack(profile_dict, technique_id, n_items=n_items)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate pack: {str(e)}")
 
-    # Upsert active pack row for this user+technique
     existing = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
     if existing:
         existing.difficulty = int(pack.get("difficulty") or profile_dict["difficulty"])
@@ -286,6 +325,7 @@ async def generate_personalised_pack(
         items=pack["items"],
     )
 
+
 @app.get("/api/content-pack/active/{technique_id}", response_model=ContentPackOut)
 async def get_active_pack(
     technique_id: str,
@@ -299,7 +339,6 @@ async def get_active_pack(
 
     row = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
     if not row or not row.pack_json:
-        # frontend should fall back to curated JSON
         return ContentPackOut(
             technique_id=technique_id,
             difficulty=1,
@@ -317,32 +356,31 @@ async def get_active_pack(
         items=pack.get("items", []),
     )
 
-# ------------------ SCORE PAYLOAD (CLINICAL) ------------------
 
 class ScoreItem(BaseModel):
     target: str
-    awardedPoints: int  # 3 / 2 / 1 / 0
-    attemptsUsed: int   # 1..3
-
+    awardedPoints: int
+    attemptsUsed: int
     cueShown: bool | None = None
     transcript: str | None = None
     best_guess: str | None = None
     matched: bool | None = None
-
-    # sentence repetition metric (0.0 -> 1.0)
     sentence_accuracy: float | None = None
-    
+
+
 class ScorePayload(BaseModel):
     technique_id: str
-    delta_score: int              # session points total
+    delta_score: int
     session_size: int | None = None
     items: list[ScoreItem] | None = None
+
 
 def _safe_int(x, default=0) -> int:
     try:
         return int(x)
     except Exception:
         return default
+
 
 @app.post("/api/score")
 async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(require_clerk_user_id)):
@@ -351,7 +389,6 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     today = date.today().isoformat()
     yesterday = (date.today() - timedelta(days=1)).isoformat()
 
-    # ---- streak logic ----
     if user.last_active_date == today:
         pass
     elif user.last_active_date == yesterday:
@@ -361,12 +398,10 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
 
     user.last_active_date = today
 
-    # ---- points/EXP gained from this session ----
     session_points = max(0, _safe_int(payload.delta_score))
     user.total_exp += session_points
     await user.save()
 
-    # ---- daily overall aggregation ----
     daily = await UserDailyStats.get_or_none(user=user, day=today)
     if not daily:
         daily = await UserDailyStats.create(user=user, day=today, points=0, sessions_played=0)
@@ -378,7 +413,6 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     user.best_daily_score = max(_safe_int(user.best_daily_score), _safe_int(daily.points))
     await user.save()
 
-    # ---- lifetime per-technique aggregation ----
     stats = await UserTechniqueStats.get_or_none(user=user, technique_id=payload.technique_id)
     if not stats:
         stats = await UserTechniqueStats.create(
@@ -401,7 +435,6 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
             best_sentence_accuracy=0.0,
         )
 
-    # ---- daily per-technique aggregation ----
     daily_tech = await UserDailyTechniqueStats.get_or_none(
         user=user,
         technique_id=payload.technique_id,
@@ -424,17 +457,14 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
             sentence_items_evaluated=0,
         )
 
-    # ---- legacy mirrors ----
     stats.attempts += 1
     stats.total_exp += session_points
     stats.best_score = max(_safe_int(stats.best_score), session_points)
 
-    # ---- lifetime technique fields ----
     stats.sessions_played += 1
     stats.total_points += session_points
     stats.best_session_points = max(_safe_int(stats.best_session_points), session_points)
 
-    # ---- daily technique fields ----
     daily_tech.sessions_played += 1
     daily_tech.points += session_points
 
@@ -469,7 +499,6 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
                 stats.incorrect += 1
                 daily_tech.incorrect += 1
 
-        # sentence repetition accuracy tracking
         if payload.technique_id == "sentence_repetition":
             sentence_accuracies = [
                 float(it.sentence_accuracy)
@@ -514,11 +543,9 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
         },
         "technique": {
             "technique_id": stats.technique_id,
-            # legacy
             "total_exp": stats.total_exp,
             "best_score": stats.best_score,
             "attempts": stats.attempts,
-            # lifetime
             "total_points": stats.total_points,
             "best_session_points": stats.best_session_points,
             "sessions_played": stats.sessions_played,
@@ -555,9 +582,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
             if session_avg_sentence_accuracy is not None else None,
         },
     }
-# ------------------ LOCAL WHISPER ENDPOINT ------------------
-# Fix hallucinations: safe prompt + repetition thresholds + no previous text conditioning
-# PLUS: short-audio guard + no-speech gating so tiny clips return empty transcript
+
 
 _PROMPT_LEAK_PHRASES = (
     "the user will say one of these words",
@@ -565,9 +590,9 @@ _PROMPT_LEAK_PHRASES = (
     "this is a single word",
 )
 
-# Tune these to your recordings
-_MIN_WEBM_BYTES = 12000          # below this: likely too short / near-empty
-_NO_SPEECH_PROB_CUTOFF = 0.80    # above this: treat as silence
+_MIN_WEBM_BYTES = 12000
+_NO_SPEECH_PROB_CUTOFF = 0.80
+
 
 @app.post("/api/speech-to-text")
 async def speech_to_text(
@@ -590,8 +615,6 @@ async def speech_to_text(
             "language": "en",
             "task": "transcribe",
             "temperature": 0,
-
-            # Key hallucination/repetition controls
             "condition_on_previous_text": False,
             "no_speech_threshold": 0.6,
             "logprob_threshold": -1.0,
@@ -602,14 +625,12 @@ async def speech_to_text(
         if vocab:
             vocab_list = [v.strip() for v in vocab.split(",") if v.strip()][:50]
 
-        # IMPORTANT: disable prompt if recording is too short
         if vocab_list and not too_short:
             kwargs["initial_prompt"] = "Words: " + ", ".join(vocab_list)
 
         result = whisper_model.transcribe(temp_path, **kwargs)
         text = (result.get("text") or "").strip()
 
-        # Use Whisper no_speech_prob (segment-level) to detect silence/near-silence
         segments = result.get("segments") or []
         max_no_speech_prob = 0.0
         for seg in segments:
@@ -620,7 +641,6 @@ async def speech_to_text(
             except Exception:
                 pass
 
-        # If audio is tiny OR Whisper thinks it's silence, return empty transcript
         if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
             return {
                 "text": "",
@@ -636,7 +656,6 @@ async def speech_to_text(
                 "no_speech_prob": max_no_speech_prob,
             }
 
-        # Safety net: drop obvious prompt leakage (treat as no useful speech)
         tnorm = normalize_word(text)
         if any(p in tnorm for p in _PROMPT_LEAK_PHRASES):
             return {
@@ -654,10 +673,8 @@ async def speech_to_text(
                 "prompt_leak": True,
             }
 
-        tokens = tnorm.split()
-        candidates = [tnorm] + tokens if tnorm else [""]
+        candidates = build_phrase_candidates(tnorm, target or "")
 
-        # Compute best_guess over vocab (for UI/feedback)
         best_guess = None
         best_dist = 10**9
         best_rel = 1.0
@@ -668,7 +685,9 @@ async def speech_to_text(
             best_score_tuple = None
             for vocab_target in vocab_list:
                 target_norm = normalize_word(vocab_target)
-                for cand in candidates:
+                vocab_candidates = build_phrase_candidates(tnorm, vocab_target)
+
+                for cand in vocab_candidates:
                     matched, dist, rel, phon = is_match_phonetic(cand, target_norm)
                     score_tuple = (0 if matched else 1, rel, dist)
 
@@ -680,7 +699,6 @@ async def speech_to_text(
                         best_phon = phon
                         best_guess_matched = matched
 
-        # Determine "matched" vs provided target (clinically correct)
         matched_vs_target = None
         dist_vs_target = None
         rel_vs_target = None
@@ -689,9 +707,11 @@ async def speech_to_text(
         if target and tnorm:
             t_target = normalize_word(target)
             best_target_tuple = None
+
             for cand in candidates:
                 m, d, r, p = is_match_phonetic(cand, t_target)
                 tup = (0 if m else 1, r, d)
+
                 if best_target_tuple is None or tup < best_target_tuple:
                     best_target_tuple = tup
                     matched_vs_target = bool(m)
@@ -712,8 +732,6 @@ async def speech_to_text(
             "distance": dist_vs_target if dist_vs_target is not None else (best_dist if vocab_list and tnorm else None),
             "rel_distance": rel_vs_target if rel_vs_target is not None else (best_rel if vocab_list and tnorm else None),
             "phonetic_used": phon_vs_target if phon_vs_target is not None else (bool(best_phon) if vocab_list and tnorm else None),
-
-            # echoes/debug
             "target": target,
             "attempt_num": attempt_num,
             "cue_shown": bool(cue_shown) if cue_shown is not None else None,
@@ -727,13 +745,14 @@ async def speech_to_text(
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-            
+
+
 @app.post("/api/sentence-eval")
 async def sentence_eval(
     audio: UploadFile = File(...),
     target_sentence: str = Form(...),
-    required_content: str = Form(...),   # comma-separated
-    required_function: str = Form(...),  # comma-separated
+    required_content: str = Form(...),
+    required_function: str = Form(...),
 ):
     temp_path = f"temp_audio/{uuid.uuid4().hex}.webm"
 
@@ -761,36 +780,30 @@ async def sentence_eval(
         content_list = [normalize_word(w) for w in required_content.split(",")]
         function_list = [normalize_word(w) for w in required_function.split(",")]
 
-                # Count content hits
         content_hits = sum(
             1 for w in content_list
             if any(is_match_phonetic(tok, w)[0] for tok in transcript_tokens)
         )
 
-        # Count function hits
         function_hits = sum(
             1 for w in function_list
             if w in transcript_tokens
         )
 
-        # Sentence-level similarity
         dist = levenshtein(transcript_norm, target_norm)
         max_len = max(len(transcript_norm), len(target_norm))
         rel_distance = dist / max_len if max_len else 1.0
         similarity_score = max(0.0, 1.0 - rel_distance)
 
-        # Accuracy components
         content_accuracy = content_hits / max(1, len(content_list))
         function_accuracy = function_hits / max(1, len(function_list)) if function_list else 1.0
 
-        # Weighted overall sentence accuracy
         weighted_accuracy = (
             0.6 * content_accuracy +
             0.2 * function_accuracy +
             0.2 * similarity_score
         )
 
-        # Graded scoring tier
         if content_accuracy >= 0.8 and weighted_accuracy >= 0.75:
             score_level = 3
         elif content_accuracy >= 0.6 and weighted_accuracy >= 0.55:
@@ -819,7 +832,6 @@ async def sentence_eval(
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-# ------------------ OPTIONAL GPT FEEDBACK ------------------
 
 @app.post("/api/speech-feedback")
 async def speech_feedback(userText: str = File(...), correctAnswer: str = File(...)):
@@ -835,7 +847,7 @@ async def speech_feedback(userText: str = File(...), correctAnswer: str = File(.
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"GPT feedback failed: {str(e)}")
 
-# ------------------ TECHNIQUE STATS ------------------
+
 @app.get("/api/progress/summary")
 async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_id)):
     user = await get_or_create_user(clerk_user_id)
@@ -843,7 +855,6 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
     today = date.today()
     days = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
 
-    # ---- overall daily points ----
     daily_rows = await UserDailyStats.filter(user=user, day__in=days).all()
     daily_map = {row.day: row for row in daily_rows}
 
@@ -856,7 +867,6 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
             "sessions": row.sessions_played if row else 0,
         })
 
-    # ---- lifetime technique summaries ----
     technique_rows = await UserTechniqueStats.filter(user=user).all()
     techniques = {}
 
@@ -898,7 +908,6 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
             "first_try_accuracy": round(first_try_accuracy, 4),
         }
 
-    # ---- 7-day daily technique history ----
     daily_tech_rows = await UserDailyTechniqueStats.filter(user=user, day__in=days).all()
 
     by_technique_day = {}
@@ -951,6 +960,7 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
         "technique_history": technique_history,
     }
 
+
 @app.get("/api/technique/{technique_id}")
 async def get_technique_stats(
     technique_id: str,
@@ -960,13 +970,11 @@ async def get_technique_stats(
     stats = await UserTechniqueStats.get_or_none(user=user, technique_id=technique_id)
 
     if not stats:
-                return {
+        return {
             "technique_id": technique_id,
-            # legacy
             "total_exp": 0,
             "best_score": 0,
             "attempts": 0,
-            # new
             "total_points": 0,
             "best_session_points": 0,
             "sessions_played": 0,
@@ -989,11 +997,9 @@ async def get_technique_stats(
 
     return {
         "technique_id": stats.technique_id,
-        # legacy
         "total_exp": stats.total_exp,
         "best_score": stats.best_score,
         "attempts": stats.attempts,
-        # new
         "total_points": stats.total_points,
         "best_session_points": stats.best_session_points,
         "sessions_played": stats.sessions_played,
@@ -1009,7 +1015,6 @@ async def get_technique_stats(
         "lifetime_avg_sentence_accuracy": round(lifetime_avg_sentence_accuracy, 4),
     }
 
-# ------------------ DATABASE ------------------
 
 register_tortoise(
     app,

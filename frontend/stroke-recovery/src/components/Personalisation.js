@@ -465,7 +465,7 @@ export default function Personalisation() {
               style={{
                 position: "fixed",
                 inset: 0,
-                background: "rgba(0, 0, 0, 0.55)",
+                background: "rgba(0, 0, 0, 0.7)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -476,40 +476,79 @@ export default function Personalisation() {
               <div
                 style={{
                   width: "100%",
-                  maxWidth: 520,
+                  maxWidth: 560,
                   borderRadius: 18,
-                  padding: 24,
-                  border: "1px solid rgba(255,255,255,0.15)",
-                  background: "rgba(20,20,20,0.96)",
-                  boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+                  padding: 28,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(18,18,18,0.98)",
+                  boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
                   textAlign: "center",
+                  color: "#f5f7fb",
                 }}
               >
-                <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 10 }}>
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 800,
+                    marginBottom: 12,
+                    color: "#ffffff",
+                  }}
+                >
                   Generating personalised pack
                 </div>
 
-                <div style={{ opacity: 0.86, lineHeight: 1.6 }}>
+                <div
+                  style={{
+                    color: "rgba(255,255,255,0.92)",
+                    lineHeight: 1.65,
+                    fontSize: 16,
+                  }}
+                >
                   Please stay on this page while ReLingo prepares your therapy content.
                 </div>
 
-                <div style={{ opacity: 0.7, marginTop: 10, lineHeight: 1.5 }}>
-                  This may take a little longer if new images need to be created.
+                <div
+                  style={{
+                    color: "rgba(255,255,255,0.82)",
+                    marginTop: 12,
+                    lineHeight: 1.6,
+                    fontSize: 15,
+                  }}
+                >
+                  ReLingo is selecting personalised exercises, checking the therapy image library,
+                  and creating new images when needed.
                 </div>
 
-                <div style={{ marginTop: 18, fontWeight: 700 }}>
+                <div
+                  style={{
+                    color: "rgba(255,255,255,0.72)",
+                    marginTop: 12,
+                    lineHeight: 1.6,
+                    fontSize: 15,
+                  }}
+                >
+                  This may take a little longer for highly personalised content.
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 20,
+                    fontWeight: 700,
+                    color: "#ffffff",
+                  }}
+                >
                   {TECHNIQUES.find((t) => t.id === selectedTechnique)?.label}
                 </div>
 
-                <div style={{ marginTop: 18 }}>
+                <div style={{ marginTop: 20 }}>
                   <span
                     style={{
                       display: "inline-block",
-                      width: 14,
-                      height: 14,
+                      width: 18,
+                      height: 18,
                       borderRadius: "50%",
-                      border: "2px solid rgba(255,255,255,0.25)",
-                      borderTopColor: "rgba(255,255,255,0.95)",
+                      border: "2px solid rgba(255,255,255,0.22)",
+                      borderTopColor: "#ffffff",
                       animation: "spin 1s linear infinite",
                     }}
                   />
