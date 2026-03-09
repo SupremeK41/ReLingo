@@ -260,7 +260,7 @@ async def generate_personalised_pack(
     }
 
     try:
-        pack =  build_content_pack(profile_dict, technique_id, n_items=n_items)
+        pack =  await build_content_pack(profile_dict, technique_id, n_items=n_items)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate pack: {str(e)}")
 

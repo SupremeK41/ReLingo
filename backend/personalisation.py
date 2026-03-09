@@ -1,4 +1,6 @@
 # backend/personalisation.py
+import base64
+import hashlib
 import json
 import os
 import re
@@ -8,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
+from models import ImageAsset
 
 
 # =========================================================
@@ -18,6 +21,13 @@ BACKEND_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BACKEND_DIR.parent
 PUBLIC_DIR = PROJECT_ROOT / "frontend" / "stroke-recovery" / "public"
 CATALOG_PATH = PUBLIC_DIR / "image_catalog.json"
+
+GENERATED_DIR = PUBLIC_DIR / "generated"
+GENERATED_IMAGE_NAMING_DIR = GENERATED_DIR / "image_naming"
+GENERATED_SENTENCE_DIR = GENERATED_DIR / "sentence_repetition"
+
+GENERATED_IMAGE_NAMING_DIR.mkdir(parents=True, exist_ok=True)
+GENERATED_SENTENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_image_catalog() -> list[dict]:
@@ -84,6 +94,14 @@ def _clean_sentence(s: str) -> str:
     return s.strip()
 
 
+def _slugify(s: str) -> str:
+    s = _norm(s)
+    s = s.replace(" ", "_")
+    s = re.sub(r"[^a-z0-9_]", "", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s or uuid.uuid4().hex[:8]
+
+
 def _ensure_list_of_tokens(x: Any, max_len: int = 8) -> list[str]:
     if not isinstance(x, list):
         return []
@@ -117,6 +135,10 @@ def _image_field(it: dict) -> str | None:
     return it.get("image") or it.get("file")
 
 
+def _hash_prompt(prompt: str) -> str:
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+
 # =========================================================
 # Catalog querying
 # =========================================================
@@ -141,9 +163,6 @@ def _filter_catalog_by_interests(
     """
     Returns:
       preferred_entries, general_entries
-
-    preferred_entries = entries with overlap to user interests
-    general_entries   = safe fallback pool excluding avoid-topic matches
     """
     interest_tokens = {_norm(x) for x in re.split(r"[,;/\n]", interests_text or "") if _norm(x)}
     avoid_tokens = {_norm(x) for x in re.split(r"[,;/\n]", avoid_topics_text or "") if _norm(x)}
@@ -222,7 +241,7 @@ def _get_sentence_candidates(
                 "id": it.get("id"),
                 "tags": it.get("tags", []),
                 "english_label": it.get("english_label"),
-                "file": _image_field(it),
+                "image": _image_field(it),
             })
             if len(out) >= limit:
                 return out
@@ -230,46 +249,43 @@ def _get_sentence_candidates(
     return out
 
 
-def _pick_catalog_image(
+def _pick_catalog_image_strict(
     catalog: list[dict],
-    want_tags: list[str],
     difficulty: int,
     technique_id: str,
     word: str | None = None,
     english_label: str | None = None,
-) -> str | None:
+) -> tuple[str | None, dict | None]:
     """
-    Strategy:
-    1) exact word match for image naming
-    2) exact english_label match for sentence repetition if provided
-    3) best tag overlap
+    Strict matching only.
+    Avoid loose tag-only matches for therapy accuracy.
     """
     entries = _catalog_entries_for_technique(catalog, technique_id, difficulty)
 
     if technique_id == "image_naming" and word:
-        w = _norm(word)
+        target = _norm(word)
         for it in entries:
-            if _norm(it.get("word", "")) == w:
-                return _image_field(it)
+            if _norm(it.get("word", "")) == target:
+                img = _image_field(it)
+                if img:
+                    return img, it
+
+            if _norm(it.get("id", "")) == target:
+                img = _image_field(it)
+                if img:
+                    return img, it
 
     if technique_id == "sentence_repetition" and english_label:
-        lbl = _norm(english_label)
+        target = _norm(english_label)
         for it in entries:
-            if _norm(it.get("english_label", "")) == lbl:
-                return _image_field(it)
+            label = _norm(it.get("english_label", ""))
+            item_id = _norm(it.get("id", ""))
+            if label == target or item_id == target:
+                img = _image_field(it)
+                if img:
+                    return img, it
 
-    want = {_norm(t) for t in (want_tags or []) if _norm(t)}
-    best_file = None
-    best_overlap = 0
-
-    for it in entries:
-        tags = {_norm(t) for t in (it.get("tags") or [])}
-        overlap = len(want & tags)
-        if overlap > best_overlap:
-            best_overlap = overlap
-            best_file = _image_field(it)
-
-    return best_file if best_overlap > 0 else None
+    return None, None
 
 
 # =========================================================
@@ -320,7 +336,7 @@ def build_llm_prompt_for_pack(
         candidate_preview = ", ".join(candidate_words[:120])
 
         mode_rule = (
-            "Prefer these catalog words first, but you may suggest closely related new words if truly useful."
+            "Prefer these catalog words first, but you may suggest new accurate everyday words or short phrases if needed."
             if allow_generated_images
             else "You MUST choose only from the provided catalog word pool."
         )
@@ -342,15 +358,17 @@ Rules:
 - Each item must follow:
 {{
   "word": "string",
-  "tags": ["tag1","tag2","tag3"]
+  "tags": ["tag1","tag2","tag3"],
+  "image_prompt": "string"
 }}
 
-- "word" may be a short everyday word or phrase from the catalog.
+- "word" may be a short everyday word or phrase.
 - Preserve natural spaces between words.
-- Prefer concrete, everyday, pictureable words.
-- Avoid anything abstract, unsafe, medical, legal, or confusing.
+- Prefer concrete, easy-to-picture items.
+- Avoid anything abstract, unsafe, medical, legal, political, upsetting, or confusing.
+- image_prompt must clearly describe one simple recognisable image for the target word.
+- image_prompt should be suitable for a clean therapy exercise image.
 - {mode_rule}
-- tags should describe what the image depicts.
 - Output JSON only.
 
 Schema:
@@ -358,7 +376,8 @@ Schema:
   "items": [
     {{
       "word": "string",
-      "tags": ["tag1","tag2","tag3"]
+      "tags": ["tag1","tag2","tag3"],
+      "image_prompt": "string"
     }}
   ]
 }}
@@ -410,6 +429,7 @@ Rules:
 - Sentences must be clear, easy to picture, and everyday.
 - Prefer simple action scenes involving people, objects, food, pets, sports, home, travel, hobbies, or routines.
 - Avoid abstract, unsafe, upsetting, political, medical, legal, or confusing content.
+- image_prompt must clearly describe a single scene matching the sentence.
 - {mode_rule}
 
 Each item must follow:
@@ -417,12 +437,14 @@ Each item must follow:
   "sentence": "string",
   "required_content": ["noun_or_verb1","noun_or_verb2"],
   "required_function": ["function1","function2"],
-  "tags": ["tag1","tag2","tag3"]
+  "tags": ["tag1","tag2","tag3"],
+  "image_prompt": "string"
 }}
 
 - required_content = key content words only
 - required_function = grammar/helper words like the/a/is/to/in/on/and
 - tags = imageable scene tags
+- image_prompt = one clear simple scene description matching the sentence
 - Output JSON only.
 
 Schema:
@@ -432,7 +454,8 @@ Schema:
       "sentence": "string",
       "required_content": ["noun_or_verb1","noun_or_verb2"],
       "required_function": ["function1","function2"],
-      "tags": ["tag1","tag2","tag3"]
+      "tags": ["tag1","tag2","tag3"],
+      "image_prompt": "string"
     }}
   ]
 }}
@@ -475,6 +498,14 @@ def generate_pack_items_with_llm(
 # Cleaning / validation
 # =========================================================
 
+def _clean_image_prompt(prompt: str, fallback: str) -> str:
+    prompt = (prompt or "").strip()
+    if prompt:
+        prompt = re.sub(r"\s+", " ", prompt)
+        return prompt[:500]
+    return fallback
+
+
 def _validate_and_clean_items(profile: dict, technique_id: str, items: list[dict], n_items: int) -> list[dict]:
     out: list[dict] = []
 
@@ -491,9 +522,15 @@ def _validate_and_clean_items(profile: dict, technique_id: str, items: list[dict
             if word not in tags:
                 tags = [word] + tags
 
+            fallback_prompt = (
+                f"A simple clear therapy-style illustration of {word}, centered, easy to recognise, plain background."
+            )
+            image_prompt = _clean_image_prompt(raw.get("image_prompt", ""), fallback_prompt)
+
             out.append({
                 "word": word,
                 "tags": tags[:8],
+                "image_prompt": image_prompt,
             })
 
         else:
@@ -508,11 +545,17 @@ def _validate_and_clean_items(profile: dict, technique_id: str, items: list[dict
             if len(required_content) < 1:
                 continue
 
+            fallback_prompt = (
+                f"A simple clear therapy-style illustration showing: {sentence}"
+            )
+            image_prompt = _clean_image_prompt(raw.get("image_prompt", ""), fallback_prompt)
+
             out.append({
                 "sentence": sentence,
                 "required_content": required_content,
                 "required_function": required_function,
                 "tags": tags,
+                "image_prompt": image_prompt,
             })
 
         if len(out) >= n_items:
@@ -537,9 +580,19 @@ def _fallback_image_naming_items(
     )
     out = []
     for w in words[:n_items]:
-        img = _pick_catalog_image(catalog, [w], difficulty, "image_naming", word=w)
+        img, _matched = _pick_catalog_image_strict(
+            catalog=catalog,
+            difficulty=difficulty,
+            technique_id="image_naming",
+            word=w,
+        )
         if img:
-            out.append({"word": w, "image": img, "source": "catalog"})
+            out.append({
+                "word": w,
+                "image": img,
+                "source": "catalog",
+                "image_prompt": f"A simple clear therapy-style illustration of {w}, centered, easy to recognise, plain background.",
+            })
     return out[:n_items]
 
 
@@ -558,7 +611,7 @@ def _fallback_sentence_items(
     for it in entries[:n_items]:
         label = (it.get("english_label") or "").strip()
         tags = it.get("tags", [])
-        image = it.get("file")
+        image = it.get("image")
         if not image:
             continue
 
@@ -572,16 +625,138 @@ def _fallback_sentence_items(
             "required_content": [t for t in tags[:3] if _clean_token(t)],
             "required_function": ["the"],
             "source": "catalog",
+            "image_prompt": f"A simple clear therapy-style illustration showing: {sentence or 'The person is doing an activity.'}",
         })
 
     return out[:n_items]
 
 
 # =========================================================
+# Generated image helpers
+# =========================================================
+
+def _generated_output_dir(technique_id: str) -> Path:
+    if technique_id == "image_naming":
+        return GENERATED_IMAGE_NAMING_DIR
+    return GENERATED_SENTENCE_DIR
+
+
+def _generated_public_path(technique_id: str, filename: str) -> str:
+    if technique_id == "image_naming":
+        return f"generated/image_naming/{filename}"
+    return f"generated/sentence_repetition/{filename}"
+
+
+def _build_image_generation_prompt(technique_id: str, item: dict) -> str:
+    if technique_id == "image_naming":
+        word = item.get("word", "")
+        base_prompt = item.get("image_prompt", "")
+        return (
+            f"{base_prompt} "
+            f"Create a single clear therapy exercise image for the target word '{word}'. "
+            f"Use a simple educational illustration style, centered subject, uncluttered composition, high recognisability, plain or very clean background, no text, no labels, no watermark."
+        ).strip()
+
+    sentence = item.get("sentence", "")
+    base_prompt = item.get("image_prompt", "")
+    return (
+        f"{base_prompt} "
+        f"Create a single clear therapy exercise image matching the sentence '{sentence}'. "
+        f"Use a simple educational illustration style, easy to understand action scene, uncluttered composition, no text, no labels, no watermark."
+    ).strip()
+
+
+async def _get_cached_generated_image_path(prompt_hash: str) -> str | None:
+    asset = await ImageAsset.get_or_none(prompt_hash=prompt_hash, source="generated")
+    if asset and asset.file_path:
+        rel = asset.file_path.lstrip("/")
+        abs_path = PUBLIC_DIR / rel
+        if abs_path.exists():
+            return rel
+    return None
+
+
+async def _store_generated_asset(
+    prompt_hash: str,
+    file_path: str,
+    difficulty: int,
+    tags: list[str],
+) -> None:
+    existing = await ImageAsset.get_or_none(prompt_hash=prompt_hash, source="generated")
+    if existing:
+        existing.file_path = file_path
+        existing.tags = tags
+        existing.difficulty = difficulty
+        await existing.save()
+        return
+
+    await ImageAsset.create(
+        owner_user=None,
+        source="generated",
+        tags=tags,
+        difficulty=difficulty,
+        file_path=file_path,
+        prompt_hash=prompt_hash,
+    )
+
+
+def _decode_image_b64_to_file(b64_data: str, output_path: Path) -> None:
+    raw = base64.b64decode(b64_data)
+    output_path.write_bytes(raw)
+
+
+async def _generate_image_with_openai(
+    technique_id: str,
+    item: dict,
+    difficulty: int,
+) -> str | None:
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    final_prompt = _build_image_generation_prompt(technique_id, item)
+    prompt_hash = _hash_prompt(final_prompt)
+
+    cached = await _get_cached_generated_image_path(prompt_hash)
+    if cached:
+        return cached
+
+    out_dir = _generated_output_dir(technique_id)
+    stem = _slugify(item.get("word") or item.get("sentence") or "generated_item")
+    filename = f"{stem}_{prompt_hash[:10]}.png"
+    output_path = out_dir / filename
+    public_path = _generated_public_path(technique_id, filename)
+
+    response = client.images.generate(
+        model="gpt-image-1",
+        prompt=final_prompt,
+        size="1024x1024",
+    )
+
+    image_b64 = None
+    data = getattr(response, "data", None) or []
+    if data:
+        first = data[0]
+        image_b64 = getattr(first, "b64_json", None) or (first.get("b64_json") if isinstance(first, dict) else None)
+
+    if not image_b64:
+        return None
+
+    _decode_image_b64_to_file(image_b64, output_path)
+
+    await _store_generated_asset(
+        prompt_hash=prompt_hash,
+        file_path=public_path,
+        difficulty=difficulty,
+        tags=item.get("tags") or [],
+    )
+
+    return public_path
+
+
+# =========================================================
 # Image attachment / resolution
 # =========================================================
 
-def attach_images_from_catalog(
+async def attach_images_to_items(
     items: list[dict],
     catalog: list[dict],
     technique_id: str,
@@ -589,46 +764,87 @@ def attach_images_from_catalog(
     profile: dict,
 ) -> list[dict]:
     out: list[dict] = []
+    allow_generated_images = bool(profile.get("allow_generated_images", False))
 
     for it in items:
-        tags = it.get("tags") or []
-
         if technique_id == "image_naming":
-            img = _pick_catalog_image(
+            img, matched_catalog_item = _pick_catalog_image_strict(
                 catalog=catalog,
-                want_tags=tags,
                 difficulty=difficulty,
                 technique_id=technique_id,
                 word=it.get("word", ""),
             )
+
             if img:
                 out.append({
                     "word": (it.get("word") or "").strip(),
                     "image": img,
-                    "tags": tags,
+                    "tags": it.get("tags") or [],
                     "source": "catalog",
+                    "image_prompt": it.get("image_prompt", ""),
+                    "matched_catalog_id": matched_catalog_item.get("id") if matched_catalog_item else None,
                 })
+                continue
+
+            if allow_generated_images:
+                gen_img = await _generate_image_with_openai(
+                    technique_id=technique_id,
+                    item=it,
+                    difficulty=difficulty,
+                )
+                if gen_img:
+                    out.append({
+                        "word": (it.get("word") or "").strip(),
+                        "image": gen_img,
+                        "tags": it.get("tags") or [],
+                        "source": "generated",
+                        "image_prompt": it.get("image_prompt", ""),
+                        "matched_catalog_id": None,
+                    })
+                    continue
 
         else:
             english_label = _clean_sentence(it.get("sentence", ""))
-            img = _pick_catalog_image(
+            img, matched_catalog_item = _pick_catalog_image_strict(
                 catalog=catalog,
-                want_tags=tags,
                 difficulty=difficulty,
                 technique_id=technique_id,
                 english_label=english_label,
             )
+
             if img:
                 out.append({
                     "sentence": (it.get("sentence") or "").strip(),
                     "image": img,
                     "required_content": it.get("required_content") or [],
                     "required_function": it.get("required_function") or [],
-                    "tags": tags,
+                    "tags": it.get("tags") or [],
                     "source": "catalog",
+                    "image_prompt": it.get("image_prompt", ""),
+                    "matched_catalog_id": matched_catalog_item.get("id") if matched_catalog_item else None,
                 })
+                continue
 
-    # If some items did not resolve, fill with curated fallback items
+            if allow_generated_images:
+                gen_img = await _generate_image_with_openai(
+                    technique_id=technique_id,
+                    item=it,
+                    difficulty=difficulty,
+                )
+                if gen_img:
+                    out.append({
+                        "sentence": (it.get("sentence") or "").strip(),
+                        "image": gen_img,
+                        "required_content": it.get("required_content") or [],
+                        "required_function": it.get("required_function") or [],
+                        "tags": it.get("tags") or [],
+                        "source": "generated",
+                        "image_prompt": it.get("image_prompt", ""),
+                        "matched_catalog_id": None,
+                    })
+                    continue
+
+    # fallback to curated items if some could not be resolved
     if len(out) < len(items):
         missing = len(items) - len(out)
         if technique_id == "image_naming":
@@ -656,7 +872,7 @@ def attach_images_from_catalog(
 # Main pack builder
 # =========================================================
 
-def build_content_pack(profile: dict, technique_id: str, n_items: int = 10) -> dict[str, Any]:
+async def build_content_pack(profile: dict, technique_id: str, n_items: int = 10) -> dict[str, Any]:
     difficulty = int(profile.get("difficulty", 1))
     catalog = load_image_catalog()
 
@@ -669,7 +885,7 @@ def build_content_pack(profile: dict, technique_id: str, n_items: int = 10) -> d
 
     cleaned = _validate_and_clean_items(profile, technique_id, raw_items, n_items)
 
-    final_items = attach_images_from_catalog(
+    final_items = await attach_images_to_items(
         items=cleaned,
         catalog=catalog,
         technique_id=technique_id,

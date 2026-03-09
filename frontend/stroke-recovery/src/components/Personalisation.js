@@ -32,6 +32,12 @@ export default function Personalisation() {
   const [selectedTechnique, setSelectedTechnique] = useState("image_naming");
   const [lastPackSummary, setLastPackSummary] = useState(null);
 
+  const isSentenceTechnique = selectedTechnique === "sentence_repetition";
+
+  const update = (key, value) => {
+    setForm((f) => ({ ...f, [key]: value }));
+  };
+
   const loadProfile = async () => {
     setError(null);
     setStatus("");
@@ -44,6 +50,7 @@ export default function Personalisation() {
       const res = await fetch(`${API_BASE}/api/personalisation`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       const data = await res.json();
       if (!res.ok) throw new Error(data?.detail || "Failed to load personalisation");
 
@@ -67,14 +74,17 @@ export default function Personalisation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const saveProfile = async () => {
-    setError(null);
-    setStatus("");
+  const saveProfile = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setError(null);
+      setStatus("");
+    }
+
     setSaving(true);
 
     try {
       const token = await getToken();
-      if (!token) return;
+      if (!token) return false;
 
       const res = await fetch(`${API_BASE}/api/personalisation`, {
         method: "POST",
@@ -92,9 +102,14 @@ export default function Personalisation() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.detail || "Failed to save personalisation");
 
-      setStatus("Saved.");
+      if (!silent) {
+        setStatus("Preferences saved.");
+      }
+
+      return true;
     } catch (e) {
       setError(String(e.message || e));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -103,15 +118,17 @@ export default function Personalisation() {
   const generatePack = async () => {
     setError(null);
     setStatus("");
-    setGenerating(true);
     setLastPackSummary(null);
+    setGenerating(true);
 
     try {
       const token = await getToken();
-      if (!token) return;
+      if (!token) throw new Error("You must be signed in.");
 
-      // Ensure profile saved first (so generation uses latest prefs)
-      await saveProfile();
+      const saved = await saveProfile({ silent: true });
+      if (!saved) {
+        throw new Error("Please fix your preferences before generating a pack.");
+      }
 
       const res = await fetch(`${API_BASE}/api/personalisation/generate`, {
         method: "POST",
@@ -121,21 +138,26 @@ export default function Personalisation() {
         },
         body: JSON.stringify({
           technique_id: selectedTechnique,
-          // optional override (normally leave null and use saved profile)
-          // difficulty: Number(form.difficulty || 1),
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data?.detail || "Failed to generate pack");
 
-      setStatus("Generated new pack.");
       setLastPackSummary({
         technique_id: data.technique_id,
         difficulty: data.difficulty,
         count: Array.isArray(data.items) ? data.items.length : 0,
         generated_at: data.generated_at,
+        generatedCount: Array.isArray(data.items)
+          ? data.items.filter((x) => x?.source === "generated").length
+          : 0,
+        catalogCount: Array.isArray(data.items)
+          ? data.items.filter((x) => x?.source === "catalog").length
+          : 0,
       });
+
+      setStatus("Pack ready.");
     } catch (e) {
       setError(String(e.message || e));
     } finally {
@@ -143,7 +165,28 @@ export default function Personalisation() {
     }
   };
 
-  const update = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+  const settingCardStyle = {
+    padding: 14,
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(0,0,0,0.10)",
+  };
+
+  const settingLabelStyle = {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 12,
+    cursor: generating || saving ? "not-allowed" : "pointer",
+    width: "100%",
+    textAlign: "left",
+  };
+
+  const checkboxStyle = {
+    marginTop: 4,
+    flexShrink: 0,
+    width: 18,
+    height: 18,
+  };
 
   return (
     <div className="basic-speech-content">
@@ -156,7 +199,10 @@ export default function Personalisation() {
       </SignedOut>
 
       <SignedIn>
-        <div className="practice-section" style={{ maxWidth: 900, margin: "0 auto" }}>
+        <div
+          className="practice-section"
+          style={{ maxWidth: 900, margin: "0 auto", position: "relative" }}
+        >
           <h2 style={{ marginBottom: 6 }}>Make it yours</h2>
           <p style={{ opacity: 0.85, marginTop: 0 }}>
             Tell ReLingo what your daily life looks like, and it will generate practice content that matches your interests.
@@ -168,13 +214,14 @@ export default function Personalisation() {
             </div>
           )}
 
-          {status && (
+          {status && !generating && (
             <div
               style={{
                 marginTop: 10,
-                padding: 10,
-                borderRadius: 10,
+                padding: 12,
+                borderRadius: 12,
                 border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(0,0,0,0.12)",
                 opacity: 0.95,
               }}
             >
@@ -186,7 +233,6 @@ export default function Personalisation() {
             <p style={{ marginTop: 14 }}>Loading…</p>
           ) : (
             <>
-              {/* Interests */}
               <div style={{ marginTop: 16 }}>
                 <label style={{ fontWeight: 700 }}>Your interests / routine</label>
                 <p style={{ marginTop: 4, opacity: 0.8 }}>
@@ -208,16 +254,15 @@ export default function Personalisation() {
                 />
               </div>
 
-              {/* Avoid topics */}
               <div style={{ marginTop: 16 }}>
                 <label style={{ fontWeight: 700 }}>Avoid topics</label>
                 <p style={{ marginTop: 4, opacity: 0.8 }}>
-                  Optional: things you don’t want included in examples.
+                  Optional: things you do not want included in your exercises.
                 </p>
                 <input
                   value={form.avoid_topics_text || ""}
                   onChange={(e) => update("avoid_topics_text", e.target.value)}
-                  placeholder="e.g., politics, medical details"
+                  placeholder="e.g. politics, medical details"
                   style={{
                     width: "100%",
                     borderRadius: 12,
@@ -229,8 +274,37 @@ export default function Personalisation() {
                 />
               </div>
 
-              {/* Difficulty */}
-              <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div style={{ marginTop: 20 }}>
+                <label style={{ fontWeight: 700 }}>Exercise type</label>
+                <select
+                  value={selectedTechnique}
+                  onChange={(e) => setSelectedTechnique(e.target.value)}
+                  style={{
+                    width: "100%",
+                    marginTop: 6,
+                    borderRadius: 12,
+                    padding: 10,
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    background: "rgba(0,0,0,0.15)",
+                    color: "inherit",
+                  }}
+                >
+                  {TECHNIQUES.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div
+                style={{
+                  marginTop: 18,
+                  display: "grid",
+                  gridTemplateColumns: isSentenceTechnique ? "1fr 1fr" : "1fr",
+                  gap: 14,
+                }}
+              >
                 <div>
                   <label style={{ fontWeight: 700 }}>Difficulty</label>
                   <select
@@ -252,58 +326,73 @@ export default function Personalisation() {
                   </select>
                 </div>
 
-                <div>
-                  <label style={{ fontWeight: 700 }}>Sentence length</label>
-                  <select
-                    value={form.sentence_length}
-                    onChange={(e) => update("sentence_length", Number(e.target.value))}
-                    style={{
-                      width: "100%",
-                      marginTop: 6,
-                      borderRadius: 12,
-                      padding: 10,
-                      border: "1px solid rgba(255,255,255,0.15)",
-                      background: "rgba(0,0,0,0.15)",
-                      color: "inherit",
-                    }}
-                  >
-                    <option value={1}>1 — Short</option>
-                    <option value={2}>2 — Medium</option>
-                    <option value={3}>3 — Long</option>
-                  </select>
+                {isSentenceTechnique && (
+                  <div>
+                    <label style={{ fontWeight: 700 }}>Sentence length</label>
+                    <select
+                      value={form.sentence_length}
+                      onChange={(e) => update("sentence_length", Number(e.target.value))}
+                      style={{
+                        width: "100%",
+                        marginTop: 6,
+                        borderRadius: 12,
+                        padding: 10,
+                        border: "1px solid rgba(255,255,255,0.15)",
+                        background: "rgba(0,0,0,0.15)",
+                        color: "inherit",
+                      }}
+                    >
+                      <option value={1}>1 — Short</option>
+                      <option value={2}>2 — Medium</option>
+                      <option value={3}>3 — Long</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
+                <div style={settingCardStyle}>
+                  <label htmlFor="cue-enabled" style={settingLabelStyle}>
+                    <input
+                      id="cue-enabled"
+                      type="checkbox"
+                      checked={form.cue_enabled}
+                      onChange={(e) => update("cue_enabled", e.target.checked)}
+                      disabled={saving || generating}
+                      style={checkboxStyle}
+                    />
+                    <div style={{ minWidth: 0, textAlign: "left" }}>
+                      <div style={{ fontWeight: 700 }}>Enable cues</div>
+                      <div style={{ opacity: 0.8, marginTop: 4, lineHeight: 1.5 }}>
+                        Show a hint after an incorrect attempt.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                <div style={settingCardStyle}>
+                  <label htmlFor="allow-generated-images" style={settingLabelStyle}>
+                    <input
+                      id="allow-generated-images"
+                      type="checkbox"
+                      checked={form.allow_generated_images}
+                      onChange={(e) => update("allow_generated_images", e.target.checked)}
+                      disabled={saving || generating}
+                      style={checkboxStyle}
+                    />
+                    <div style={{ minWidth: 0, textAlign: "left" }}>
+                      <div style={{ fontWeight: 700 }}>Allow generated images</div>
+                      <div style={{ opacity: 0.8, marginTop: 4, lineHeight: 1.5 }}>
+                        If ReLingo cannot find an accurate image in the therapy library, it may create a new one for your personalised exercise.
+                      </div>
+                    </div>
+                  </label>
                 </div>
               </div>
 
-              {/* Toggles */}
-              <div style={{ marginTop: 18, display: "grid", gap: 10 }}>
-                <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <input
-                    type="checkbox"
-                    checked={form.cue_enabled}
-                    onChange={(e) => update("cue_enabled", e.target.checked)}
-                  />
-                  <span>
-                    <strong>Enable cues</strong> (hints after an incorrect attempt)
-                  </span>
-                </label>
-
-                <label style={{ display: "flex", alignItems: "center", gap: 10, opacity: 0.85 }}>
-                  <input
-                    type="checkbox"
-                    checked={form.allow_generated_images}
-                    onChange={(e) => update("allow_generated_images", e.target.checked)}
-                    disabled
-                  />
-                  <span>
-                    <strong>Allow generated images</strong> (coming later — currently using curated image catalog)
-                  </span>
-                </label>
-              </div>
-
-              {/* Actions */}
-              <div style={{ marginTop: 22, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ marginTop: 24, display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button
-                  onClick={saveProfile}
+                  onClick={() => saveProfile()}
                   disabled={saving || generating}
                   style={{
                     padding: "10px 16px",
@@ -316,64 +405,126 @@ export default function Personalisation() {
                   {saving ? "Saving..." : "Save Preferences"}
                 </button>
 
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <select
-                    value={selectedTechnique}
-                    onChange={(e) => setSelectedTechnique(e.target.value)}
-                    style={{
-                      borderRadius: 12,
-                      padding: 10,
-                      border: "1px solid rgba(255,255,255,0.15)",
-                      background: "rgba(0,0,0,0.15)",
-                      color: "inherit",
-                    }}
-                  >
-                    {TECHNIQUES.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        Generate for: {t.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    onClick={generatePack}
-                    disabled={generating || saving}
-                    style={{
-                      padding: "10px 16px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.15)",
-                      cursor: generating || saving ? "not-allowed" : "pointer",
-                      fontWeight: 700,
-                    }}
-                    type="button"
-                  >
-                    {generating ? "Generating..." : "Generate Pack"}
-                  </button>
-                </div>
+                <button
+                  onClick={generatePack}
+                  disabled={generating || saving}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    cursor: generating || saving ? "not-allowed" : "pointer",
+                    fontWeight: 700,
+                  }}
+                  type="button"
+                >
+                  {generating
+                    ? "Generating..."
+                    : `Generate ${TECHNIQUES.find((t) => t.id === selectedTechnique)?.label || "Pack"}`}
+                </button>
               </div>
 
-              {lastPackSummary && (
+              {lastPackSummary && !generating && (
                 <div
                   style={{
-                    marginTop: 16,
-                    padding: 12,
+                    marginTop: 18,
+                    padding: 14,
                     borderRadius: 12,
                     border: "1px solid rgba(255,255,255,0.15)",
                     background: "rgba(0,0,0,0.12)",
                   }}
                 >
-                  <div style={{ fontWeight: 800, marginBottom: 6 }}>Latest pack</div>
-                  <div style={{ opacity: 0.9 }}>
-                    Technique: <strong>{lastPackSummary.technique_id}</strong> • Difficulty:{" "}
-                    <strong>{lastPackSummary.difficulty}</strong> • Items:{" "}
-                    <strong>{lastPackSummary.count}</strong>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Latest pack</div>
+
+                  <div style={{ opacity: 0.95 }}>
+                    Technique: <strong>{lastPackSummary.technique_id}</strong>
                   </div>
-                  <div style={{ opacity: 0.7, marginTop: 4 }}>
+                  <div style={{ opacity: 0.95, marginTop: 4 }}>
+                    Difficulty: <strong>{lastPackSummary.difficulty}</strong>
+                  </div>
+                  <div style={{ opacity: 0.95, marginTop: 4 }}>
+                    Items: <strong>{lastPackSummary.count}</strong>
+                  </div>
+
+                  <div style={{ opacity: 0.85, marginTop: 8 }}>
+                    Curated images: <strong>{lastPackSummary.catalogCount}</strong>
+                    <span style={{ marginLeft: 14 }}>
+                      Generated images: <strong>{lastPackSummary.generatedCount}</strong>
+                    </span>
+                  </div>
+
+                  <div style={{ opacity: 0.7, marginTop: 8 }}>
                     Generated: {lastPackSummary.generated_at}
                   </div>
                 </div>
               )}
             </>
+          )}
+
+          {generating && (
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0, 0, 0, 0.55)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 9999,
+                padding: 20,
+              }}
+            >
+              <div
+                style={{
+                  width: "100%",
+                  maxWidth: 520,
+                  borderRadius: 18,
+                  padding: 24,
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  background: "rgba(20,20,20,0.96)",
+                  boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+                  textAlign: "center",
+                }}
+              >
+                <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 10 }}>
+                  Generating personalised pack
+                </div>
+
+                <div style={{ opacity: 0.86, lineHeight: 1.6 }}>
+                  Please stay on this page while ReLingo prepares your therapy content.
+                </div>
+
+                <div style={{ opacity: 0.7, marginTop: 10, lineHeight: 1.5 }}>
+                  This may take a little longer if new images need to be created.
+                </div>
+
+                <div style={{ marginTop: 18, fontWeight: 700 }}>
+                  {TECHNIQUES.find((t) => t.id === selectedTechnique)?.label}
+                </div>
+
+                <div style={{ marginTop: 18 }}>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      border: "2px solid rgba(255,255,255,0.25)",
+                      borderTopColor: "rgba(255,255,255,0.95)",
+                      animation: "spin 1s linear infinite",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <style>
+                {`
+                  @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                  }
+                `}
+              </style>
+            </div>
           )}
         </div>
       </SignedIn>
