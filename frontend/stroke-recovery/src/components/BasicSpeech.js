@@ -24,6 +24,23 @@ function getCue(word) {
   return word[0].toUpperCase();
 }
 
+function resolveImagePath(image) {
+  if (!image) return "/placeholder.jpg";
+  if (image.startsWith("/")) return image;
+
+  if (
+    image.startsWith("images/") ||
+    image.startsWith("SentenceImages/") ||
+    image.startsWith("arasaac_images/") ||
+    image.startsWith("arasaac_sentence_images/") ||
+    image.startsWith("generated/")
+  ) {
+    return `/${image}`;
+  }
+
+  return `/images/${image}`;
+}
+
 // attempt 1 -> 3 points, attempt 2 -> 2 points, attempt 3 (after cue) -> 1 point
 function pointsForAttempt(attemptNum) {
   if (attemptNum === 1) return 3;
@@ -50,14 +67,14 @@ export default function BasicSpeech() {
   const { getToken } = useAuth();
 
   // -------------------------
-  // NEW: content source
+  // content source
   // -------------------------
   const [contentSource, setContentSource] = useState("local"); // "pack" | "local"
   const [baseItems, setBaseItems] = useState(wordPairs); // [{word,image}]
   const [packError, setPackError] = useState(null);
 
   // -------------------------
-  // Existing state
+  // existing state
   // -------------------------
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -133,7 +150,7 @@ export default function BasicSpeech() {
   }, [feedback]);
 
   // -------------------------
-  // NEW: load active pack (image_naming) once user is signed in
+  // load active pack (image_naming) once user is signed in
   // -------------------------
   useEffect(() => {
     const loadPack = async () => {
@@ -156,7 +173,6 @@ export default function BasicSpeech() {
 
         const items = Array.isArray(data?.items) ? data.items : [];
 
-        // Expecting items like: { word, image }
         const cleaned = items
           .map((it) => ({
             word: String(it?.word || "").trim(),
@@ -216,9 +232,7 @@ export default function BasicSpeech() {
     setFeedback("");
     setAudioResult("");
     setError(null);
-
     setLockedUntilNext(false);
-
     setAttemptNum(1);
     setShowCue(false);
   };
@@ -229,7 +243,8 @@ export default function BasicSpeech() {
       resetForNextItem(nextIndex);
     } else {
       setCompleted(true);
-      setFeedback("Practice completed!");
+      setFeedback("");
+      setAudioResult("");
       setLockedUntilNext(false);
     }
   };
@@ -351,9 +366,7 @@ export default function BasicSpeech() {
 
     const vocab = sessionWords.map((x) => x.word).join(",");
     formData.append("vocab", vocab);
-
     formData.append("target", currentItem.word);
-
     formData.append("attempt_num", String(attemptNum));
     formData.append("cue_shown", showCue ? "1" : "0");
 
@@ -418,12 +431,10 @@ export default function BasicSpeech() {
   };
 
   const recordDisabled = completed || isProcessing || lockedUntilNext;
-
   const progressDisplay = Math.min(
     currentIndex + (completed ? 0 : 1),
     sessionWords.length
   );
-
   const cueLetter = !completed && currentItem ? getCue(currentItem.word) : "";
 
   return (
@@ -480,49 +491,57 @@ export default function BasicSpeech() {
 
         <div className="practice-cards">
           <div className="practice-card">
-            {!completed && currentItem && (
-              <div className="image-container">
-                <img
-                src={currentItem.image.startsWith("/") ? currentItem.image : `/${currentItem.image}`}
-                alt={currentItem.word}
-                className="practice-image"
-              />
+            {!completed ? (
+              currentItem && (
+                <div className="image-container">
+                  <img
+                    src={resolveImagePath(currentItem.image)}
+                    alt={currentItem.word}
+                    className="practice-image"
+                  />
 
-                <p className="target-word">🎯 Target word: {currentItem.word}</p>
+                  <p className="target-word">🎯 Target word: {currentItem.word}</p>
 
-                {showCue && (
-                  <div
-                    style={{
-                      marginTop: 10,
-                      padding: 10,
-                      borderRadius: 10,
-                      border: "1px solid rgba(255,255,255,0.15)",
-                    }}
-                  >
-                    <strong>Cue:</strong> starts with <strong>{cueLetter}</strong>
-                  </div>
-                )}
+                  {showCue && (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: 10,
+                        borderRadius: 10,
+                        border: "1px solid rgba(255,255,255,0.15)",
+                      }}
+                    >
+                      <strong>Cue:</strong> starts with <strong>{cueLetter}</strong>
+                    </div>
+                  )}
+                </div>
+              )
+            ) : null}
+
+            {!completed && (
+              <div className="recording-section">
+                <button
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={isRecording ? "recording" : ""}
+                  disabled={recordDisabled && !isRecording}
+                >
+                  {isRecording
+                    ? "Stop Recording"
+                    : isProcessing
+                    ? "Processing..."
+                    : "Start Recording"}
+                </button>
               </div>
             )}
 
-            <div className="recording-section">
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                className={isRecording ? "recording" : ""}
-                disabled={recordDisabled && !isRecording}
-              >
-                {isRecording ? "Stop Recording" : isProcessing ? "Processing..." : "Start Recording"}
-              </button>
-            </div>
-
-            {audioResult && (
+            {!completed && audioResult && (
               <div className="result-section">
                 <h4>🗣️ You said:</h4>
                 <p>{audioResult}</p>
               </div>
             )}
 
-            {feedback && (
+            {!completed && feedback && (
               <div
                 className={`feedback-message ${feedback
                   .toLowerCase()
