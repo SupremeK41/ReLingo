@@ -97,9 +97,6 @@ def phonetic_codes(w: str) -> set[str]:
 
 
 def is_match_phonetic(word: str, target: str) -> tuple[bool, int, float, bool]:
-    """
-    Returns: (matched, dist, rel, phonetic_match)
-    """
     w = singularize_simple(normalize_word(word))
     t = singularize_simple(normalize_word(target))
 
@@ -125,10 +122,6 @@ def is_match_phonetic(word: str, target: str) -> tuple[bool, int, float, bool]:
 
 
 def build_phrase_candidates(transcript_norm: str, target_text: str) -> list[str]:
-    """
-    Build candidate phrases from the transcript so multi-word targets
-    can still match even if Whisper adds extra words before/after.
-    """
     if not transcript_norm:
         return [""]
 
@@ -152,11 +145,9 @@ def build_phrase_candidates(transcript_norm: str, target_text: str) -> list[str]
     if target_tokens:
         n = len(target_tokens)
 
-        # exact target-length ngrams
         for i in range(len(transcript_tokens) - n + 1):
             add_candidate(" ".join(transcript_tokens[i:i + n]))
 
-        # one shorter / one longer windows for tolerance
         for extra_n in {max(1, n - 1), n + 1}:
             if extra_n <= 0:
                 continue
@@ -186,7 +177,7 @@ async def get_or_create_user(clerk_user_id: str) -> User:
 
 
 async def get_or_create_profile(user: User) -> UserProfile:
-    prof = await UserProfile.get_or_none(user=user)
+    prof = await UserProfile.get_or_none(user_id=user.id)
     if not prof:
         prof = await UserProfile.create(user=user)
     return prof
@@ -237,6 +228,7 @@ async def get_personalisation(clerk_user_id: str = Depends(require_clerk_user_id
         sentence_length=prof.sentence_length,
         cue_enabled=prof.cue_enabled,
         allow_generated_images=prof.allow_generated_images,
+        image_generation_mode=getattr(prof, "image_generation_mode", "none") or "none",
         updated_at=prof.updated_at,
     )
 
@@ -249,14 +241,34 @@ async def save_personalisation(
     user = await get_or_create_user(clerk_user_id)
     prof = await get_or_create_profile(user)
 
+    requested_mode = (payload.image_generation_mode or "none").strip().lower()
+    if requested_mode not in {"none", "openai", "local"}:
+        requested_mode = "none"
+
+    allow_generated_images = bool(payload.allow_generated_images) and requested_mode != "none"
+    if not allow_generated_images:
+        requested_mode = "none"
+
     prof.interests_text = payload.interests_text or ""
     prof.avoid_topics_text = payload.avoid_topics_text
     prof.difficulty = max(1, min(3, int(payload.difficulty or 1)))
     prof.sentence_length = max(1, min(3, int(payload.sentence_length or 1)))
     prof.cue_enabled = bool(payload.cue_enabled)
-    prof.allow_generated_images = bool(payload.allow_generated_images)
+    prof.allow_generated_images = allow_generated_images
+    prof.image_generation_mode = requested_mode
 
-    await prof.save()
+    await prof.save(
+        update_fields=[
+            "interests_text",
+            "avoid_topics_text",
+            "difficulty",
+            "sentence_length",
+            "cue_enabled",
+            "allow_generated_images",
+            "image_generation_mode",
+        ]
+    )
+    await prof.refresh_from_db()
 
     return UserProfileOut(
         interests_text=prof.interests_text or "",
@@ -265,6 +277,7 @@ async def save_personalisation(
         sentence_length=prof.sentence_length,
         cue_enabled=prof.cue_enabled,
         allow_generated_images=prof.allow_generated_images,
+        image_generation_mode=prof.image_generation_mode or "none",
         updated_at=prof.updated_at,
     )
 
@@ -297,7 +310,11 @@ async def generate_personalised_pack(
         "sentence_length": int(prof.sentence_length or 1),
         "cue_enabled": bool(prof.cue_enabled),
         "allow_generated_images": bool(prof.allow_generated_images),
+        "image_generation_mode": (prof.image_generation_mode or "none"),
     }
+
+    print("PROFILE SETTINGS:")
+    print(profile_dict)
 
     try:
         pack = await build_content_pack(profile_dict, technique_id, n_items=n_items)

@@ -1,0 +1,107 @@
+{
+  "85": {
+    "inputs": {
+      "ckpt_name": "sd_xl_turbo_1.0_fp16.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "87": {
+    "inputs": {
+      "text": "a mechanical keyboard, simple clean illustration, white background",
+      "clip": [
+        "85",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "88": {
+    "inputs": {
+      "text": "",
+      "clip": [
+        "85",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "89": {
+    "inputs": {
+      "width": 768,
+      "height": 768,
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "Empty Latent Image"
+    }
+  },
+  "90": {
+    "inputs": {
+      "seed": 920709509395748,
+      "steps": 20,
+      "cfg": 8,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "85",
+        0
+      ],
+      "positive": [
+        "87",
+        0
+      ],
+      "negative": [
+        "88",
+        0
+      ],
+      "latent_image": [
+        "89",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "91": {
+    "inputs": {
+      "samples": [
+        "90",
+        0
+      ],
+      "vae": [
+        "85",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "92": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "91",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

@@ -1,4 +1,3 @@
-# models.py
 from tortoise.models import Model
 from tortoise import fields
 
@@ -35,8 +34,8 @@ class UserDailyStats(Model):
 
     day = fields.CharField(max_length=20)  # ISO date yyyy-mm-dd
 
-    points = fields.IntField(default=0)           # total points earned that day
-    sessions_played = fields.IntField(default=0)  # total sessions completed that day
+    points = fields.IntField(default=0)
+    sessions_played = fields.IntField(default=0)
 
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -75,10 +74,10 @@ class UserTechniqueStats(Model):
     total_items = fields.IntField(default=0)
     total_attempts = fields.IntField(default=0)
 
-    correct_first = fields.IntField(default=0)        # 3 points
-    correct_second = fields.IntField(default=0)       # 2 points
-    correct_after_cue = fields.IntField(default=0)    # 1 point
-    incorrect = fields.IntField(default=0)            # 0 points
+    correct_first = fields.IntField(default=0)
+    correct_second = fields.IntField(default=0)
+    correct_after_cue = fields.IntField(default=0)
+    incorrect = fields.IntField(default=0)
 
     # Sentence repetition metric (lifetime)
     total_sentence_accuracy = fields.FloatField(default=0.0)
@@ -94,13 +93,6 @@ class UserTechniqueStats(Model):
 class UserDailyTechniqueStats(Model):
     """
     Per-day, per-technique history for graphs and progress tracking.
-
-    This lets you show 7-day trends for:
-    - points
-    - sessions
-    - first try accuracy
-    - average attempts per item
-    - sentence accuracy
     """
     id = fields.IntField(pk=True)
 
@@ -111,7 +103,7 @@ class UserDailyTechniqueStats(Model):
     )
 
     technique_id = fields.CharField(max_length=50)
-    day = fields.CharField(max_length=20)  # ISO date yyyy-mm-dd
+    day = fields.CharField(max_length=20)
 
     points = fields.IntField(default=0)
     sessions_played = fields.IntField(default=0)
@@ -161,8 +153,11 @@ class UserProfile(Model):
 
     cue_enabled = fields.BooleanField(default=True)
 
-    # Later: allow image generation
+    # Whether any generation beyond curated images is allowed
     allow_generated_images = fields.BooleanField(default=False)
+
+    # "none" | "openai" | "local"
+    image_generation_mode = fields.CharField(max_length=20, default="none")
 
     updated_at = fields.DatetimeField(auto_now=True)
 
@@ -185,10 +180,8 @@ class UserContentPack(Model):
     technique_id = fields.CharField(max_length=50)
     difficulty = fields.IntField(default=1)
 
-    # Wrapper JSON (pack_id, generated_at, items, etc.)
     pack_json = fields.JSONField()
 
-    # Optional: allows history later without schema changes
     active = fields.BooleanField(default=True)
 
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -204,7 +197,6 @@ class ImageAsset(Model):
     """
     id = fields.UUIDField(pk=True)
 
-    # null = global shared / curated
     owner_user = fields.ForeignKeyField(
         "models.User",
         null=True,
@@ -218,11 +210,8 @@ class ImageAsset(Model):
     tags = fields.JSONField(null=True)
     difficulty = fields.IntField(default=1)
 
-    # Store a path the frontend can use
-    # e.g. "/SentenceImages/boy_kicking_ball.jpg"
     file_path = fields.CharField(max_length=255)
 
-    # For generated caching later
     prompt_hash = fields.CharField(max_length=128, null=True)
 
     created_at = fields.DatetimeField(auto_now_add=True)

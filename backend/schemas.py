@@ -1,4 +1,3 @@
-# schemas.py (FINAL - stats + personalisation + content packs)
 from __future__ import annotations
 
 from datetime import datetime
@@ -42,7 +41,6 @@ class UserOut(BaseModel):
     streak: int
     last_active_date: Optional[str] = None
 
-    # daily rollups (populated by /api/me)
     today_points: Optional[int] = None
     today_sessions: Optional[int] = None
 
@@ -64,6 +62,9 @@ class UserProfileIn(BaseModel):
     cue_enabled: bool = True
     allow_generated_images: bool = False
 
+    # "none" | "openai" | "local"
+    image_generation_mode: str = "none"
+
 
 class UserProfileOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -74,6 +75,9 @@ class UserProfileOut(BaseModel):
     sentence_length: int
     cue_enabled: bool
     allow_generated_images: bool
+
+    # "none" | "openai" | "local"
+    image_generation_mode: str = "none"
 
     updated_at: Optional[datetime] = None
 

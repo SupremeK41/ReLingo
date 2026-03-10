@@ -1,5 +1,5 @@
 // frontend/src/components/Personalisation.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { SignedIn, SignedOut, useAuth } from "@clerk/clerk-react";
 import "../App.css";
 
@@ -8,6 +8,24 @@ const API_BASE = "http://localhost:8000";
 const TECHNIQUES = [
   { id: "image_naming", label: "Image Naming" },
   { id: "sentence_repetition", label: "Sentence Repetition" },
+];
+
+const IMAGE_GENERATION_OPTIONS = [
+  {
+    id: "none",
+    label: "Do not generate new images",
+    description: "Use the therapy image library only.",
+  },
+  {
+    id: "openai",
+    label: "Online image generation",
+    description: "Create new images using the cloud model when needed.",
+  },
+  {
+    id: "local",
+    label: "Local image generation",
+    description: "Create new images on this machine when needed.",
+  },
 ];
 
 export default function Personalisation() {
@@ -27,6 +45,7 @@ export default function Personalisation() {
     sentence_length: 1,
     cue_enabled: true,
     allow_generated_images: false,
+    image_generation_mode: "none", // "none" | "openai" | "local"
   });
 
   const [selectedTechnique, setSelectedTechnique] = useState("image_naming");
@@ -34,8 +53,33 @@ export default function Personalisation() {
 
   const isSentenceTechnique = selectedTechnique === "sentence_repetition";
 
+  const effectiveImageGenerationMode = useMemo(() => {
+    if (!form.allow_generated_images) return "none";
+    return form.image_generation_mode || "openai";
+  }, [form.allow_generated_images, form.image_generation_mode]);
+
   const update = (key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
+  };
+
+  const handleAllowGeneratedImagesChange = (checked) => {
+    setForm((f) => ({
+      ...f,
+      allow_generated_images: checked,
+      image_generation_mode: checked
+        ? (f.image_generation_mode && f.image_generation_mode !== "none"
+            ? f.image_generation_mode
+            : "openai")
+        : "none",
+    }));
+  };
+
+  const handleGenerationModeChange = (mode) => {
+    setForm((f) => ({
+      ...f,
+      allow_generated_images: mode !== "none",
+      image_generation_mode: mode,
+    }));
   };
 
   const loadProfile = async () => {
@@ -54,13 +98,25 @@ export default function Personalisation() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.detail || "Failed to load personalisation");
 
+      const backendAllowGenerated = !!data.allow_generated_images;
+
+      // Backend may not support image_generation_mode yet, so default cleanly.
+      const backendMode =
+        typeof data.image_generation_mode === "string" &&
+        ["none", "openai", "local"].includes(data.image_generation_mode)
+          ? data.image_generation_mode
+          : backendAllowGenerated
+          ? "openai"
+          : "none";
+
       setForm({
         interests_text: data.interests_text ?? "",
         avoid_topics_text: data.avoid_topics_text ?? "",
         difficulty: Number(data.difficulty ?? 1),
         sentence_length: Number(data.sentence_length ?? 1),
         cue_enabled: !!data.cue_enabled,
-        allow_generated_images: !!data.allow_generated_images,
+        allow_generated_images: backendAllowGenerated,
+        image_generation_mode: backendMode,
       });
     } catch (e) {
       setError(String(e.message || e));
@@ -86,17 +142,21 @@ export default function Personalisation() {
       const token = await getToken();
       if (!token) return false;
 
+      const payload = {
+        ...form,
+        difficulty: Number(form.difficulty || 1),
+        sentence_length: Number(form.sentence_length || 1),
+        allow_generated_images: effectiveImageGenerationMode !== "none",
+        image_generation_mode: effectiveImageGenerationMode,
+      };
+
       const res = await fetch(`${API_BASE}/api/personalisation`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          ...form,
-          difficulty: Number(form.difficulty || 1),
-          sentence_length: Number(form.sentence_length || 1),
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -187,6 +247,13 @@ export default function Personalisation() {
     width: 18,
     height: 18,
   };
+
+  const generationSummaryText =
+    effectiveImageGenerationMode === "local"
+      ? "Local image generation selected."
+      : effectiveImageGenerationMode === "openai"
+      ? "Online image generation selected."
+      : "Only curated library images will be used.";
 
   return (
     <div className="basic-speech-content">
@@ -376,7 +443,7 @@ export default function Personalisation() {
                       id="allow-generated-images"
                       type="checkbox"
                       checked={form.allow_generated_images}
-                      onChange={(e) => update("allow_generated_images", e.target.checked)}
+                      onChange={(e) => handleAllowGeneratedImagesChange(e.target.checked)}
                       disabled={saving || generating}
                       style={checkboxStyle}
                     />
@@ -387,6 +454,61 @@ export default function Personalisation() {
                       </div>
                     </div>
                   </label>
+                </div>
+
+                <div style={settingCardStyle}>
+                  <div style={{ fontWeight: 700, textAlign: "left", marginBottom: 10 }}>
+                    Image generation method
+                  </div>
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {IMAGE_GENERATION_OPTIONS.map((option) => {
+                      const checked = effectiveImageGenerationMode === option.id;
+
+                      return (
+                        <label
+                          key={option.id}
+                          htmlFor={`image-generation-${option.id}`}
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: 12,
+                            cursor: saving || generating ? "not-allowed" : "pointer",
+                            width: "100%",
+                            textAlign: "left",
+                            padding: 10,
+                            borderRadius: 12,
+                            border: checked
+                              ? "1px solid rgba(255,255,255,0.28)"
+                              : "1px solid rgba(255,255,255,0.08)",
+                            background: checked
+                              ? "rgba(255,255,255,0.06)"
+                              : "rgba(255,255,255,0.02)",
+                          }}
+                        >
+                          <input
+                            id={`image-generation-${option.id}`}
+                            type="radio"
+                            name="image_generation_mode"
+                            checked={checked}
+                            onChange={() => handleGenerationModeChange(option.id)}
+                            disabled={saving || generating}
+                            style={{ marginTop: 4 }}
+                          />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700 }}>{option.label}</div>
+                            <div style={{ opacity: 0.78, marginTop: 4, lineHeight: 1.5 }}>
+                              {option.description}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ marginTop: 10, opacity: 0.75, textAlign: "left", lineHeight: 1.5 }}>
+                    {generationSummaryText}
+                  </div>
                 </div>
               </div>
 
@@ -450,6 +572,10 @@ export default function Personalisation() {
                     <span style={{ marginLeft: 14 }}>
                       Generated images: <strong>{lastPackSummary.generatedCount}</strong>
                     </span>
+                  </div>
+
+                  <div style={{ opacity: 0.75, marginTop: 8 }}>
+                    Generation method: <strong>{effectiveImageGenerationMode}</strong>
                   </div>
 
                   <div style={{ opacity: 0.7, marginTop: 8 }}>
@@ -517,6 +643,24 @@ export default function Personalisation() {
                 >
                   ReLingo is selecting personalised exercises, checking the therapy image library,
                   and creating new images when needed.
+                </div>
+
+                <div
+                  style={{
+                    color: "rgba(255,255,255,0.72)",
+                    marginTop: 12,
+                    lineHeight: 1.6,
+                    fontSize: 15,
+                  }}
+                >
+                  Selected method:{" "}
+                  <strong style={{ color: "#ffffff" }}>
+                    {effectiveImageGenerationMode === "local"
+                      ? "Local image generation"
+                      : effectiveImageGenerationMode === "openai"
+                      ? "Online image generation"
+                      : "Curated library only"}
+                  </strong>
                 </div>
 
                 <div

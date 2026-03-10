@@ -11,6 +11,7 @@ from typing import Any
 
 from openai import OpenAI
 from models import ImageAsset
+from local_image_generation import generate_image_via_comfyui, LocalImageGenerationError
 
 
 # =========================================================
@@ -31,9 +32,6 @@ GENERATED_SENTENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_image_catalog() -> list[dict]:
-    """
-    Loads the unified exported catalog from frontend public.
-    """
     if not CATALOG_PATH.exists():
         return []
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
@@ -44,10 +42,6 @@ def load_image_catalog() -> list[dict]:
 # =========================================================
 
 def _norm(s: str) -> str:
-    """
-    General normalisation for matching/comparison.
-    Preserves spaces between words.
-    """
     s = (s or "").strip().lower()
     replacements = {
         "é": "e", "è": "e", "ê": "e", "ë": "e",
@@ -68,10 +62,6 @@ def _norm(s: str) -> str:
 
 
 def _clean_display_word(w: str) -> str:
-    """
-    Clean word/phrase for display and storage.
-    IMPORTANT: preserves spaces, so 'mixed skewer' stays 'mixed skewer'.
-    """
     w = _norm(w)
     w = re.sub(r"[^a-z\s]", " ", w)
     w = re.sub(r"\s+", " ", w).strip()
@@ -79,9 +69,6 @@ def _clean_display_word(w: str) -> str:
 
 
 def _clean_token(w: str) -> str:
-    """
-    Clean single token for evaluation/comparison lists.
-    """
     w = (w or "").strip().lower()
     w = re.sub(r"[^a-z]", "", w)
     return w
@@ -129,14 +116,24 @@ def _ensure_list_of_tags(x: Any, max_len: int = 8) -> list[str]:
 
 
 def _image_field(it: dict) -> str | None:
-    """
-    Supports either 'image' or legacy 'file' catalog fields.
-    """
     return it.get("image") or it.get("file")
 
 
 def _hash_prompt(prompt: str) -> str:
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+
+
+def _get_image_generation_mode(profile: dict) -> str:
+    allow_generated_images = bool(profile.get("allow_generated_images", False))
+    mode = str(profile.get("image_generation_mode", "none") or "none").strip().lower()
+
+    if mode not in {"none", "openai", "local"}:
+        mode = "none"
+
+    if not allow_generated_images:
+        return "none"
+
+    return mode
 
 
 # =========================================================
@@ -160,10 +157,6 @@ def _filter_catalog_by_interests(
     interests_text: str,
     avoid_topics_text: str,
 ) -> tuple[list[dict], list[dict]]:
-    """
-    Returns:
-      preferred_entries, general_entries
-    """
     interest_tokens = {_norm(x) for x in re.split(r"[,;/\n]", interests_text or "") if _norm(x)}
     avoid_tokens = {_norm(x) for x in re.split(r"[,;/\n]", avoid_topics_text or "") if _norm(x)}
 
@@ -256,10 +249,6 @@ def _pick_catalog_image_strict(
     word: str | None = None,
     english_label: str | None = None,
 ) -> tuple[str | None, dict | None]:
-    """
-    Strict matching only.
-    Avoid loose tag-only matches for therapy accuracy.
-    """
     entries = _catalog_entries_for_technique(catalog, technique_id, difficulty)
 
     if technique_id == "image_naming" and word:
@@ -752,6 +741,83 @@ async def _generate_image_with_openai(
     return public_path
 
 
+async def _generate_image_locally(
+    technique_id: str,
+    item: dict,
+    difficulty: int,
+) -> str | None:
+    final_prompt = _build_image_generation_prompt(technique_id, item)
+    prompt_hash = _hash_prompt(final_prompt)
+
+    cached = await _get_cached_generated_image_path(prompt_hash)
+    if cached:
+        print("[LOCAL GEN] using cached image:", cached)
+        return cached
+
+    stem = _slugify(item.get("word") or item.get("sentence") or "generated_item")
+
+    if technique_id == "image_naming":
+        save_prefix = f"generated/image_naming/{stem}_{prompt_hash[:10]}"
+    else:
+        save_prefix = f"generated/sentence_repetition/{stem}_{prompt_hash[:10]}"
+
+    print("[LOCAL GEN] technique:", technique_id)
+    print("[LOCAL GEN] stem:", stem)
+    print("[LOCAL GEN] prompt:", final_prompt)
+    print("[LOCAL GEN] save_prefix:", save_prefix)
+
+    try:
+        public_path = generate_image_via_comfyui(
+            prompt_text=final_prompt,
+            save_prefix=save_prefix,
+            technique_id=technique_id,
+        )
+        print("[LOCAL GEN] generated path:", public_path)
+    except LocalImageGenerationError as e:
+        print("[LOCAL GEN] failed:", str(e))
+        return None
+
+    await _store_generated_asset(
+        prompt_hash=prompt_hash,
+        file_path=public_path,
+        difficulty=difficulty,
+        tags=item.get("tags") or [],
+    )
+    print("[LOCAL GEN] stored generated asset:", public_path)
+
+    return public_path
+
+
+async def _generate_image_with_selected_method(
+    technique_id: str,
+    item: dict,
+    difficulty: int,
+    profile: dict,
+) -> tuple[str | None, str | None]:
+    mode = _get_image_generation_mode(profile)
+
+    if mode == "none":
+        return None, None
+
+    if mode == "openai":
+        img = await _generate_image_with_openai(
+            technique_id=technique_id,
+            item=item,
+            difficulty=difficulty,
+        )
+        return img, "openai" if img else None
+
+    if mode == "local":
+        img = await _generate_image_locally(
+            technique_id=technique_id,
+            item=item,
+            difficulty=difficulty,
+        )
+        return img, "local" if img else None
+
+    return None, None
+
+
 # =========================================================
 # Image attachment / resolution
 # =========================================================
@@ -764,9 +830,37 @@ async def attach_images_to_items(
     profile: dict,
 ) -> list[dict]:
     out: list[dict] = []
-    allow_generated_images = bool(profile.get("allow_generated_images", False))
+    generation_mode = _get_image_generation_mode(profile)
+
+    print("[ATTACH] generation_mode:", generation_mode)
+    print("[ATTACH] technique_id:", technique_id)
+    print("[ATTACH] item_count:", len(items))
 
     for it in items:
+        # TEMPORARY: force local generation for image naming
+        if technique_id == "image_naming" and generation_mode == "local":
+            print("[ATTACH] FORCE LOCAL GENERATION for word:", it.get("word", ""))
+
+            gen_img, gen_method = await _generate_image_with_selected_method(
+                technique_id=technique_id,
+                item=it,
+                difficulty=difficulty,
+                profile=profile,
+            )
+            if gen_img:
+                out.append({
+                    "word": (it.get("word") or "").strip(),
+                    "image": gen_img,
+                    "tags": it.get("tags") or [],
+                    "source": "generated",
+                    "generation_method": gen_method,
+                    "image_prompt": it.get("image_prompt", ""),
+                    "matched_catalog_id": None,
+                })
+                continue
+
+            print("[ATTACH] Local generation failed, falling back to curated match for:", it.get("word", ""))
+
         if technique_id == "image_naming":
             img, matched_catalog_item = _pick_catalog_image_strict(
                 catalog=catalog,
@@ -776,6 +870,7 @@ async def attach_images_to_items(
             )
 
             if img:
+                print("[ATTACH] curated image used for:", it.get("word", ""), "->", img)
                 out.append({
                     "word": (it.get("word") or "").strip(),
                     "image": img,
@@ -786,11 +881,13 @@ async def attach_images_to_items(
                 })
                 continue
 
-            if allow_generated_images:
-                gen_img = await _generate_image_with_openai(
+            if generation_mode != "none":
+                print("[ATTACH] trying generation after no curated match for:", it.get("word", ""))
+                gen_img, gen_method = await _generate_image_with_selected_method(
                     technique_id=technique_id,
                     item=it,
                     difficulty=difficulty,
+                    profile=profile,
                 )
                 if gen_img:
                     out.append({
@@ -798,6 +895,7 @@ async def attach_images_to_items(
                         "image": gen_img,
                         "tags": it.get("tags") or [],
                         "source": "generated",
+                        "generation_method": gen_method,
                         "image_prompt": it.get("image_prompt", ""),
                         "matched_catalog_id": None,
                     })
@@ -825,11 +923,12 @@ async def attach_images_to_items(
                 })
                 continue
 
-            if allow_generated_images:
-                gen_img = await _generate_image_with_openai(
+            if generation_mode != "none":
+                gen_img, gen_method = await _generate_image_with_selected_method(
                     technique_id=technique_id,
                     item=it,
                     difficulty=difficulty,
+                    profile=profile,
                 )
                 if gen_img:
                     out.append({
@@ -839,14 +938,16 @@ async def attach_images_to_items(
                         "required_function": it.get("required_function") or [],
                         "tags": it.get("tags") or [],
                         "source": "generated",
+                        "generation_method": gen_method,
                         "image_prompt": it.get("image_prompt", ""),
                         "matched_catalog_id": None,
                     })
                     continue
 
-    # fallback to curated items if some could not be resolved
     if len(out) < len(items):
         missing = len(items) - len(out)
+        print("[ATTACH] unresolved item count:", missing)
+
         if technique_id == "image_naming":
             fillers = _fallback_image_naming_items(
                 catalog=catalog,
