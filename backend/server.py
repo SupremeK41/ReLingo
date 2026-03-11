@@ -1,18 +1,17 @@
 import os
+import re
+import shutil
+import uuid
+from datetime import date, timedelta, datetime
+
+import whisper
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
-from tortoise.contrib.fastapi import register_tortoise
 from metaphone import doublemetaphone
-
-import whisper
-import shutil
-from datetime import date, timedelta, datetime
-import re
-import uuid
-
 from openai import OpenAI
 from pydantic import BaseModel
+from tortoise.contrib.fastapi import register_tortoise
 
 from auth_clerk import require_clerk_user_id
 from models import (
@@ -24,8 +23,12 @@ from models import (
     UserContentPack,
 )
 from schemas import UserOut, UserProfileIn, UserProfileOut, ContentPackOut
-
 from personalisation import build_content_pack
+
+
+# =========================================================
+# App / env setup
+# =========================================================
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -42,26 +45,120 @@ app.add_middleware(
 
 whisper_model = whisper.load_model("base")
 
-if not os.path.exists("temp_audio"):
-    os.makedirs("temp_audio")
+TEMP_AUDIO_DIR = "temp_audio"
+os.makedirs(TEMP_AUDIO_DIR, exist_ok=True)
 
 
-def normalize_word(s: str) -> str:
-    s = s.lower()
+# =========================================================
+# Constants
+# =========================================================
+
+_PROMPT_LEAK_PHRASES = (
+    "the user will say one of these words",
+    "single word naming exercise",
+    "this is a single word",
+)
+
+_MIN_WEBM_BYTES = 12000
+_NO_SPEECH_PROB_CUTOFF = 0.80
+
+DEFAULT_FUNCTION_WORDS = {
+    "a", "an", "the",
+    "is", "am", "are", "was", "were", "be", "being", "been",
+    "to", "of", "in", "on", "at", "by", "for", "with", "from",
+    "and", "or", "but",
+    "will", "would", "can", "could", "should", "shall", "may", "might",
+    "do", "does", "did",
+    "has", "have", "had",
+    "he", "she", "it", "they", "we", "you", "i",
+    "him", "her", "them", "us",
+    "this", "that", "these", "those",
+    "my", "your", "his", "their", "our",
+    "as", "if", "than", "then", "so", "because", "while",
+    "before", "after", "during", "into", "onto", "over", "under",
+}
+
+
+# =========================================================
+# Normalisation helpers
+# =========================================================
+
+def normalize_text(s: str | None) -> str:
+    s = (s or "").lower()
     s = re.sub(r"[^\w\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
 
+def normalize_word(s: str | None) -> str:
+    return normalize_text(s)
+
+
 def singularize_simple(w: str) -> str:
+    w = normalize_word(w)
+
     if w.endswith("ies") and len(w) > 3:
         return w[:-3] + "y"
-    if w.endswith("es") and len(w) > 2:
+    if w.endswith("es") and len(w) > 3:
         return w[:-2]
-    if w.endswith("s") and len(w) > 1:
+    if w.endswith("s") and len(w) > 2:
         return w[:-1]
     return w
 
+
+def normalize_token_for_match(w: str | None) -> str:
+    return singularize_simple(normalize_word(w))
+
+
+def tokenize(s: str | None) -> list[str]:
+    norm = normalize_text(s)
+    return norm.split() if norm else []
+
+
+def parse_csv_list(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    for part in raw.split(","):
+        item = normalize_text(part)
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+
+    return out
+
+
+def derive_targets_from_sentence(sentence: str) -> tuple[list[str], list[str]]:
+    tokens = tokenize(sentence)
+
+    content: list[str] = []
+    function: list[str] = []
+    seen_content: set[str] = set()
+    seen_function: set[str] = set()
+
+    for tok in tokens:
+        norm_tok = normalize_word(tok)
+        if not norm_tok:
+            continue
+
+        if norm_tok in DEFAULT_FUNCTION_WORDS:
+            if norm_tok not in seen_function:
+                seen_function.add(norm_tok)
+                function.append(norm_tok)
+        else:
+            if norm_tok not in seen_content:
+                seen_content.add(norm_tok)
+                content.append(norm_tok)
+
+    return content, function
+
+
+# =========================================================
+# Distance / phonetics
+# =========================================================
 
 def levenshtein(a: str, b: str) -> int:
     if a == b:
@@ -88,7 +185,9 @@ def allowed_distance(max_len: int) -> int:
         return 1
     if max_len <= 6:
         return 2
-    return 3
+    if max_len <= 10:
+        return 3
+    return 4
 
 
 def phonetic_codes(w: str) -> set[str]:
@@ -97,11 +196,12 @@ def phonetic_codes(w: str) -> set[str]:
 
 
 def is_match_phonetic(word: str, target: str) -> tuple[bool, int, float, bool]:
-    w = singularize_simple(normalize_word(word))
-    t = singularize_simple(normalize_word(target))
+    w = normalize_token_for_match(word)
+    t = normalize_token_for_match(target)
 
     if not w or not t:
         return (False, 999, 1.0, False)
+
     if w == t:
         return (True, 0, 0.0, True)
 
@@ -115,11 +215,36 @@ def is_match_phonetic(word: str, target: str) -> tuple[bool, int, float, bool]:
     pw = phonetic_codes(w)
     pt = phonetic_codes(t)
     phonetic_match = bool(pw & pt)
+
     if phonetic_match:
         return (True, dist, rel, True)
 
     return (False, dist, rel, False)
 
+
+def token_matches_target(spoken_token: str, target_token: str, allow_phonetic: bool = True) -> bool:
+    spoken_token = normalize_word(spoken_token)
+    target_token = normalize_word(target_token)
+
+    if not spoken_token or not target_token:
+        return False
+
+    if allow_phonetic:
+        matched, _, rel, _ = is_match_phonetic(spoken_token, target_token)
+        return matched or rel <= 0.34
+
+    if spoken_token == target_token:
+        return True
+
+    dist = levenshtein(spoken_token, target_token)
+    max_len = max(len(spoken_token), len(target_token))
+    rel = dist / max_len if max_len else 1.0
+    return dist <= 1 or rel <= 0.20
+
+
+# =========================================================
+# Phrase candidate helpers
+# =========================================================
 
 def build_phrase_candidates(transcript_norm: str, target_text: str) -> list[str]:
     if not transcript_norm:
@@ -129,7 +254,7 @@ def build_phrase_candidates(transcript_norm: str, target_text: str) -> list[str]
     seen: set[str] = set()
 
     def add_candidate(x: str) -> None:
-        x = normalize_word(x)
+        x = normalize_text(x)
         if x and x not in seen:
             seen.add(x)
             out.append(x)
@@ -137,7 +262,7 @@ def build_phrase_candidates(transcript_norm: str, target_text: str) -> list[str]
     add_candidate(transcript_norm)
 
     transcript_tokens = transcript_norm.split()
-    target_tokens = normalize_word(target_text).split() if target_text else []
+    target_tokens = normalize_text(target_text).split() if target_text else []
 
     for tok in transcript_tokens:
         add_candidate(tok)
@@ -156,6 +281,103 @@ def build_phrase_candidates(transcript_norm: str, target_text: str) -> list[str]
 
     return out
 
+
+def best_phrase_match(spoken_text: str, target_text: str) -> tuple[bool, int, float, bool]:
+    spoken_norm = normalize_text(spoken_text)
+    target_norm = normalize_text(target_text)
+
+    if not spoken_norm or not target_norm:
+        return (False, 999, 1.0, False)
+
+    candidates = build_phrase_candidates(spoken_norm, target_norm)
+
+    best = (False, 999, 1.0, False)
+    best_tuple = (1, 1.0, 999)
+
+    for cand in candidates:
+        matched, dist, rel, phon = is_match_phonetic(cand, target_norm)
+        tup = (0 if matched else 1, rel, dist)
+
+        if tup < best_tuple:
+            best_tuple = tup
+            best = (matched, dist, rel, phon)
+
+    return best
+
+
+def target_item_present(
+    transcript_norm: str,
+    transcript_tokens: list[str],
+    target_item: str,
+    allow_phonetic: bool = True,
+) -> bool:
+    target_item = normalize_text(target_item)
+    if not target_item:
+        return False
+
+    target_parts = target_item.split()
+
+    if len(target_parts) == 1:
+        return any(
+            token_matches_target(tok, target_item, allow_phonetic=allow_phonetic)
+            for tok in transcript_tokens
+        )
+
+    matched, _, rel, _ = best_phrase_match(transcript_norm, target_item)
+    return matched or rel <= 0.34
+
+
+def compute_target_coverage(
+    transcript_norm: str,
+    target_items: list[str],
+    allow_phonetic: bool = True,
+) -> tuple[int, float, list[str]]:
+    transcript_tokens = tokenize(transcript_norm)
+    matched_items: list[str] = []
+
+    for item in target_items:
+        if target_item_present(
+            transcript_norm,
+            transcript_tokens,
+            item,
+            allow_phonetic=allow_phonetic,
+        ):
+            matched_items.append(item)
+
+    accuracy = len(matched_items) / len(target_items) if target_items else 1.0
+    return len(matched_items), accuracy, matched_items
+
+
+def compute_similarity_score(a: str, b: str) -> tuple[int, float, float]:
+    a = normalize_text(a)
+    b = normalize_text(b)
+
+    dist = levenshtein(a, b)
+    max_len = max(len(a), len(b))
+    rel_distance = dist / max_len if max_len else 1.0
+    similarity_score = max(0.0, 1.0 - rel_distance)
+
+    return dist, rel_distance, similarity_score
+
+
+def extract_max_no_speech_prob(result: dict) -> float:
+    segments = result.get("segments") or []
+    max_no_speech_prob = 0.0
+
+    for seg in segments:
+        try:
+            p = float(seg.get("no_speech_prob") or 0.0)
+            if p > max_no_speech_prob:
+                max_no_speech_prob = p
+        except Exception:
+            pass
+
+    return max_no_speech_prob
+
+
+# =========================================================
+# User/profile helpers
+# =========================================================
 
 @app.get("/")
 def index():
@@ -196,6 +418,17 @@ def _pack_wrapper(technique_id: str, difficulty: int, items: list[dict]) -> dict
         "items": items,
     }
 
+
+def _safe_int(x, default=0) -> int:
+    try:
+        return int(x)
+    except Exception:
+        return default
+
+
+# =========================================================
+# User endpoints
+# =========================================================
 
 @app.get("/api/me", response_model=UserOut)
 async def me(clerk_user_id: str = Depends(require_clerk_user_id)):
@@ -281,6 +514,10 @@ async def save_personalisation(
         updated_at=prof.updated_at,
     )
 
+
+# =========================================================
+# Content pack generation
+# =========================================================
 
 class GeneratePackPayload(BaseModel):
     technique_id: str
@@ -374,6 +611,10 @@ async def get_active_pack(
     )
 
 
+# =========================================================
+# Score tracking
+# =========================================================
+
 class ScoreItem(BaseModel):
     target: str
     awardedPoints: int
@@ -390,13 +631,6 @@ class ScorePayload(BaseModel):
     delta_score: int
     session_size: int | None = None
     items: list[ScoreItem] | None = None
-
-
-def _safe_int(x, default=0) -> int:
-    try:
-        return int(x)
-    except Exception:
-        return default
 
 
 @app.post("/api/score")
@@ -601,15 +835,9 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     }
 
 
-_PROMPT_LEAK_PHRASES = (
-    "the user will say one of these words",
-    "single word naming exercise",
-    "this is a single word",
-)
-
-_MIN_WEBM_BYTES = 12000
-_NO_SPEECH_PROB_CUTOFF = 0.80
-
+# =========================================================
+# Speech-to-text (image naming / single response)
+# =========================================================
 
 @app.post("/api/speech-to-text")
 async def speech_to_text(
@@ -619,7 +847,7 @@ async def speech_to_text(
     attempt_num: int | None = Form(default=None),
     cue_shown: int | None = Form(default=None),
 ):
-    temp_path = f"temp_audio/{uuid.uuid4().hex}.webm"
+    temp_path = f"{TEMP_AUDIO_DIR}/{uuid.uuid4().hex}.webm"
 
     try:
         with open(temp_path, "wb") as buffer:
@@ -647,16 +875,9 @@ async def speech_to_text(
 
         result = whisper_model.transcribe(temp_path, **kwargs)
         text = (result.get("text") or "").strip()
+        tnorm = normalize_text(text)
 
-        segments = result.get("segments") or []
-        max_no_speech_prob = 0.0
-        for seg in segments:
-            try:
-                p = float(seg.get("no_speech_prob") or 0.0)
-                if p > max_no_speech_prob:
-                    max_no_speech_prob = p
-            except Exception:
-                pass
+        max_no_speech_prob = extract_max_no_speech_prob(result)
 
         if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
             return {
@@ -673,7 +894,6 @@ async def speech_to_text(
                 "no_speech_prob": max_no_speech_prob,
             }
 
-        tnorm = normalize_word(text)
         if any(p in tnorm for p in _PROMPT_LEAK_PHRASES):
             return {
                 "text": "",
@@ -700,12 +920,12 @@ async def speech_to_text(
 
         if vocab_list and tnorm:
             best_score_tuple = None
+
             for vocab_target in vocab_list:
-                target_norm = normalize_word(vocab_target)
                 vocab_candidates = build_phrase_candidates(tnorm, vocab_target)
 
                 for cand in vocab_candidates:
-                    matched, dist, rel, phon = is_match_phonetic(cand, target_norm)
+                    matched, dist, rel, phon = is_match_phonetic(cand, vocab_target)
                     score_tuple = (0 if matched else 1, rel, dist)
 
                     if best_score_tuple is None or score_tuple < best_score_tuple:
@@ -722,11 +942,10 @@ async def speech_to_text(
         phon_vs_target = None
 
         if target and tnorm:
-            t_target = normalize_word(target)
             best_target_tuple = None
 
             for cand in candidates:
-                m, d, r, p = is_match_phonetic(cand, t_target)
+                m, d, r, p = is_match_phonetic(cand, target)
                 tup = (0 if m else 1, r, d)
 
                 if best_target_tuple is None or tup < best_target_tuple:
@@ -764,6 +983,10 @@ async def speech_to_text(
             os.remove(temp_path)
 
 
+# =========================================================
+# Sentence repetition evaluation
+# =========================================================
+
 @app.post("/api/sentence-eval")
 async def sentence_eval(
     audio: UploadFile = File(...),
@@ -771,11 +994,14 @@ async def sentence_eval(
     required_content: str = Form(...),
     required_function: str = Form(...),
 ):
-    temp_path = f"temp_audio/{uuid.uuid4().hex}.webm"
+    temp_path = f"{TEMP_AUDIO_DIR}/{uuid.uuid4().hex}.webm"
 
     try:
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(audio.file, buffer)
+
+        file_size = os.path.getsize(temp_path)
+        too_short = file_size < _MIN_WEBM_BYTES
 
         result = whisper_model.transcribe(
             temp_path,
@@ -789,43 +1015,56 @@ async def sentence_eval(
         )
 
         text = (result.get("text") or "").strip()
-        transcript_norm = normalize_word(text)
-        transcript_tokens = transcript_norm.split()
+        transcript_norm = normalize_text(text)
+        target_norm = normalize_text(target_sentence)
 
-        target_norm = normalize_word(target_sentence)
+        max_no_speech_prob = extract_max_no_speech_prob(result)
 
-        content_list = [normalize_word(w) for w in required_content.split(",")]
-        function_list = [normalize_word(w) for w in required_function.split(",")]
+        if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
+            return {
+                "text": "",
+                "content_hits": 0,
+                "function_hits": 0,
+                "content_accuracy": 0.0,
+                "function_accuracy": 0.0,
+                "similarity_score": 0.0,
+                "weighted_accuracy": 0.0,
+                "rel_distance": 1.0,
+                "score_level": 0,
+                "too_short": too_short,
+                "no_speech_prob": max_no_speech_prob,
+            }
 
-        content_hits = sum(
-            1 for w in content_list
-            if any(is_match_phonetic(tok, w)[0] for tok in transcript_tokens)
+        derived_content, derived_function = derive_targets_from_sentence(target_sentence)
+
+        provided_content = parse_csv_list(required_content)
+        provided_function = parse_csv_list(required_function)
+
+        content_hits, content_accuracy, matched_content_items = compute_target_coverage(
+            transcript_norm,
+            derived_content,
+            allow_phonetic=True,
         )
 
-        function_hits = sum(
-            1 for w in function_list
-            if w in transcript_tokens
+        function_hits, function_accuracy, matched_function_items = compute_target_coverage(
+            transcript_norm,
+            derived_function,
+            allow_phonetic=False,
         )
 
-        dist = levenshtein(transcript_norm, target_norm)
-        max_len = max(len(transcript_norm), len(target_norm))
-        rel_distance = dist / max_len if max_len else 1.0
-        similarity_score = max(0.0, 1.0 - rel_distance)
-
-        content_accuracy = content_hits / max(1, len(content_list))
-        function_accuracy = function_hits / max(1, len(function_list)) if function_list else 1.0
+        _, rel_distance, similarity_score = compute_similarity_score(transcript_norm, target_norm)
 
         weighted_accuracy = (
-            0.6 * content_accuracy +
-            0.2 * function_accuracy +
-            0.2 * similarity_score
+            0.70 * content_accuracy +
+            0.10 * function_accuracy +
+            0.20 * similarity_score
         )
 
-        if content_accuracy >= 0.8 and weighted_accuracy >= 0.75:
+        if content_accuracy >= 0.85 and weighted_accuracy >= 0.80:
             score_level = 3
-        elif content_accuracy >= 0.6 and weighted_accuracy >= 0.55:
+        elif content_accuracy >= 0.65 and weighted_accuracy >= 0.62:
             score_level = 2
-        elif content_accuracy >= 0.4:
+        elif content_accuracy >= 0.40 or weighted_accuracy >= 0.45:
             score_level = 1
         else:
             score_level = 0
@@ -840,6 +1079,14 @@ async def sentence_eval(
             "weighted_accuracy": round(weighted_accuracy, 4),
             "rel_distance": round(rel_distance, 4),
             "score_level": score_level,
+            "too_short": False,
+            "no_speech_prob": max_no_speech_prob,
+            "derived_content_items": derived_content,
+            "derived_function_items": derived_function,
+            "matched_content_items": matched_content_items,
+            "matched_function_items": matched_function_items,
+            "provided_content_items": provided_content,
+            "provided_function_items": provided_function,
         }
 
     except Exception as e:
@@ -850,20 +1097,45 @@ async def sentence_eval(
             os.remove(temp_path)
 
 
+# =========================================================
+# Optional speech feedback
+# =========================================================
+
 @app.post("/api/speech-feedback")
-async def speech_feedback(userText: str = File(...), correctAnswer: str = File(...)):
+async def speech_feedback(userText: str = Form(...), correctAnswer: str = Form(...)):
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a speech therapist."},
-                {"role": "user", "content": f"I said: {userText}. The correct word was: {correctAnswer}. How did I do?"},
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a supportive speech therapy assistant. "
+                        "Give brief, encouraging, clinically appropriate feedback."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"I said: {userText}. "
+                        f"The correct answer was: {correctAnswer}. "
+                        f"Give short supportive feedback."
+                    ),
+                },
             ],
+            temperature=0.4,
         )
-        return {"feedback": response.choices[0].message.content}
+
+        feedback = response.choices[0].message.content or "Good effort."
+        return {"feedback": feedback.strip()}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"GPT feedback failed: {str(e)}")
 
+
+# =========================================================
+# Progress summary
+# =========================================================
 
 @app.get("/api/progress/summary")
 async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_id)):
@@ -1032,6 +1304,10 @@ async def get_technique_stats(
         "lifetime_avg_sentence_accuracy": round(lifetime_avg_sentence_accuracy, 4),
     }
 
+
+# =========================================================
+# DB registration
+# =========================================================
 
 register_tortoise(
     app,

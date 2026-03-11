@@ -10,6 +10,21 @@ const SESSION_SIZE = 5;
 const TECHNIQUE_ID = "sentence_repetition";
 const API_BASE = "http://localhost:8000";
 
+const DEFAULT_FUNCTION_WORDS = new Set([
+  "a", "an", "the",
+  "is", "am", "are", "was", "were", "be", "being", "been",
+  "to", "of", "in", "on", "at", "by", "for", "with", "from",
+  "and", "or", "but",
+  "will", "would", "can", "could", "should", "shall", "may", "might",
+  "do", "does", "did",
+  "has", "have", "had",
+  "he", "she", "it", "they", "we", "you", "i",
+  "him", "her", "them", "us",
+  "this", "that", "these", "those",
+  "my", "your", "his", "their", "our",
+  "as", "if", "than", "then", "so", "because", "while",
+]);
+
 function resolveImagePath(image) {
   if (!image) return "/placeholder.jpg";
   if (image.startsWith("/")) return image;
@@ -39,22 +54,69 @@ function shuffle(arr) {
 function pointsForAttempt(attemptNum) {
   if (attemptNum === 1) return 3;
   if (attemptNum === 2) return 2;
-  return 1; // attempt 3
+  return 1;
 }
 
-// "Correct" threshold for sentence repetition in your backend:
 function isCorrect(scoreLevel) {
   return Number(scoreLevel) >= 2;
+}
+
+function normaliseSentenceText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function deriveSentenceTargets(sentence) {
+  const norm = normaliseSentenceText(sentence);
+  const tokens = norm.split(" ").filter(Boolean);
+
+  const required_function = tokens.filter((t) => DEFAULT_FUNCTION_WORDS.has(t));
+  const required_content = tokens.filter((t) => !DEFAULT_FUNCTION_WORDS.has(t));
+
+  return {
+    required_content: [...new Set(required_content)],
+    required_function: [...new Set(required_function)],
+  };
+}
+
+function normaliseSentenceItem(it) {
+  const sentence = String(it?.sentence || it?.text || "").trim();
+  const image = String(it?.image || "").trim();
+
+  const derivedTargets = deriveSentenceTargets(sentence);
+
+  return {
+    sentence,
+    image,
+    required_content:
+      Array.isArray(it?.required_content) && it.required_content.length > 0
+        ? it.required_content
+            .map((x) => String(x || "").trim())
+            .filter(Boolean)
+        : derivedTargets.required_content,
+    required_function:
+      Array.isArray(it?.required_function) && it.required_function.length > 0
+        ? it.required_function
+            .map((x) => String(x || "").trim())
+            .filter(Boolean)
+        : derivedTargets.required_function,
+  };
+}
+
+function getDefaultSentenceItems() {
+  return Array.isArray(sentenceData)
+    ? sentenceData.map(normaliseSentenceItem).filter((it) => it.sentence)
+    : [];
 }
 
 export default function SentenceRepetition() {
   const { getToken } = useAuth();
 
-  // -------------------------
-  // NEW: content source
-  // -------------------------
-  const [contentSource, setContentSource] = useState("local"); // "pack" | "local"
-  const [baseItems, setBaseItems] = useState(sentenceData);
+  const [contentSource, setContentSource] = useState("local");
+  const [baseItems, setBaseItems] = useState(getDefaultSentenceItems());
   const [packError, setPackError] = useState(null);
 
   const [isRecording, setIsRecording] = useState(false);
@@ -75,12 +137,10 @@ export default function SentenceRepetition() {
 
   const [sessionSeed, setSessionSeed] = useState(0);
 
-  // post-once guard + result/error
   const postedSessionRef = useRef(false);
   const [scorePostResult, setScorePostResult] = useState(null);
   const [scorePostError, setScorePostError] = useState(null);
 
-  // per-item breakdown (matches backend ScoreItem)
   const [itemResults, setItemResults] = useState([]);
 
   const [isMuted, setIsMuted] = useState(() => {
@@ -92,9 +152,6 @@ export default function SentenceRepetition() {
   });
   const lastSpokenRef = useRef("");
 
-  // -------------------------
-  // NEW: load active pack for sentence repetition
-  // -------------------------
   useEffect(() => {
     const loadPack = async () => {
       setPackError(null);
@@ -103,7 +160,7 @@ export default function SentenceRepetition() {
         const token = await getToken();
         if (!token) {
           setContentSource("local");
-          setBaseItems(sentenceData);
+          setBaseItems(getDefaultSentenceItems());
           return;
         }
 
@@ -115,29 +172,19 @@ export default function SentenceRepetition() {
         if (!res.ok) throw new Error(data?.detail || "Failed to load content pack");
 
         const items = Array.isArray(data?.items) ? data.items : [];
-
-        // Expect items like:
-        // { sentence, image, required_content:[...], required_function:[...] }
-        const cleaned = items
-          .map((it) => ({
-            sentence: String(it?.sentence || "").trim(),
-            image: String(it?.image || "").trim(),
-            required_content: Array.isArray(it?.required_content) ? it.required_content : [],
-            required_function: Array.isArray(it?.required_function) ? it.required_function : [],
-          }))
-          .filter((it) => it.sentence);
+        const cleaned = items.map(normaliseSentenceItem).filter((it) => it.sentence);
 
         if (cleaned.length > 0) {
           setContentSource("pack");
           setBaseItems(cleaned);
         } else {
           setContentSource("local");
-          setBaseItems(sentenceData);
+          setBaseItems(getDefaultSentenceItems());
         }
       } catch (e) {
         setPackError(String(e.message || e));
         setContentSource("local");
-        setBaseItems(sentenceData);
+        setBaseItems(getDefaultSentenceItems());
       }
     };
 
@@ -155,8 +202,8 @@ export default function SentenceRepetition() {
     if (isMuted) return;
     if (!text) return;
     if (!("speechSynthesis" in window)) return;
-
     if (lastSpokenRef.current === text) return;
+
     lastSpokenRef.current = text;
 
     window.speechSynthesis.cancel();
@@ -182,7 +229,6 @@ export default function SentenceRepetition() {
   };
 
   useEffect(() => {
-    // reset when session changes
     setCurrentIndex(0);
     setFeedback("");
     setAudioResult("");
@@ -194,7 +240,6 @@ export default function SentenceRepetition() {
     setIsProcessing(false);
     lastSpokenRef.current = "";
 
-    // reset posting + items
     postedSessionRef.current = false;
     setScorePostResult(null);
     setScorePostError(null);
@@ -258,8 +303,8 @@ export default function SentenceRepetition() {
         attemptNum === 1
           ? `Correct sentence! (+3)${acc}`
           : attemptNum === 2
-          ? `Correct! (+2)${acc}`
-          : `Correct! (+1)${acc}`
+            ? `Correct! (+2)${acc}`
+            : `Correct! (+1)${acc}`
       );
       finalizeItem({ awardedPoints: pts, payload, scoreLevel });
       return;
@@ -334,9 +379,17 @@ export default function SentenceRepetition() {
   const sendAudio = async (blob) => {
     if (!currentItem) return;
 
-    // If a personalised pack item is missing required_* arrays, we avoid crashing:
-    const reqContent = Array.isArray(currentItem.required_content) ? currentItem.required_content : [];
-    const reqFunction = Array.isArray(currentItem.required_function) ? currentItem.required_function : [];
+    const derivedTargets = deriveSentenceTargets(currentItem.sentence);
+
+    const reqContent =
+      Array.isArray(currentItem.required_content) && currentItem.required_content.length > 0
+        ? currentItem.required_content
+        : derivedTargets.required_content;
+
+    const reqFunction =
+      Array.isArray(currentItem.required_function) && currentItem.required_function.length > 0
+        ? currentItem.required_function
+        : derivedTargets.required_function;
 
     const formData = new FormData();
     formData.append("audio", blob, "recording.webm");
@@ -361,7 +414,6 @@ export default function SentenceRepetition() {
     }
   };
 
-  // Post total session points once completed (with per-item breakdown)
   useEffect(() => {
     const postSessionScore = async () => {
       try {
@@ -475,6 +527,7 @@ export default function SentenceRepetition() {
                 </div>
               )
             ) : null}
+
             {!completed && (
               <div className="recording-section">
                 <button
@@ -485,8 +538,8 @@ export default function SentenceRepetition() {
                   {isRecording
                     ? "Stop Recording"
                     : isProcessing
-                    ? "Processing..."
-                    : "Start Recording"}
+                      ? "Processing..."
+                      : "Start Recording"}
                 </button>
               </div>
             )}

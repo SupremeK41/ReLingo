@@ -5,6 +5,8 @@ import json
 import os
 import re
 import uuid
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -35,6 +37,30 @@ def load_image_catalog() -> list[dict]:
     if not CATALOG_PATH.exists():
         return []
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+
+
+# =========================================================
+# Text generation provider config
+# =========================================================
+
+def _get_text_generation_provider(profile: dict | None = None) -> str:
+    """
+    Controls therapy item text generation:
+    - openai
+    - local
+    """
+    provider = os.getenv("TEXT_GENERATION_PROVIDER", "openai").strip().lower()
+    if provider not in {"openai", "local"}:
+        provider = "openai"
+    return provider
+
+
+def _get_local_llm_model() -> str:
+    return os.getenv("LOCAL_LLM_MODEL", "gemma3").strip() or "gemma3"
+
+
+def _get_ollama_base_url() -> str:
+    return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
 
 
 # =========================================================
@@ -452,10 +478,135 @@ Schema:
 
 
 # =========================================================
+# Structured output schema
+# =========================================================
+
+def _pack_items_schema(technique_id: str) -> dict:
+    if technique_id == "image_naming":
+        return {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "word": {"type": "string"},
+                            "tags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "image_prompt": {"type": "string"},
+                        },
+                        "required": ["word", "tags", "image_prompt"],
+                    },
+                }
+            },
+            "required": ["items"],
+        }
+
+    return {
+        "type": "object",
+        "properties": {
+            "items": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "sentence": {"type": "string"},
+                        "required_content": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "required_function": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "image_prompt": {"type": "string"},
+                    },
+                    "required": [
+                        "sentence",
+                        "required_content",
+                        "required_function",
+                        "tags",
+                        "image_prompt",
+                    ],
+                },
+            }
+        },
+        "required": ["items"],
+    }
+
+
+# =========================================================
+# LLM generation helpers
+# =========================================================
+
+def _ollama_chat_json(
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    schema: dict,
+    temperature: float = 0.2,
+) -> dict:
+    """
+    Calls a local Ollama server and requests structured JSON output.
+    """
+    url = f"{_get_ollama_base_url()}/api/chat"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "stream": False,
+        "format": schema,
+        "options": {
+            "temperature": temperature,
+        },
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Ollama HTTP error {e.code}: {body}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(
+            f"Could not connect to Ollama at {_get_ollama_base_url()}. "
+            f"Make sure Ollama is running and the model is pulled. Original error: {e}"
+        ) from e
+
+    data = json.loads(raw)
+    message = data.get("message") or {}
+    content = (message.get("content") or "").strip()
+
+    if not content:
+        raise ValueError("Ollama returned empty content")
+
+    return _extract_json(content)
+
+
+# =========================================================
 # LLM generation
 # =========================================================
 
-def generate_pack_items_with_llm(
+def _generate_pack_items_with_openai(
     profile: dict,
     technique_id: str,
     n_items: int,
@@ -465,7 +616,7 @@ def generate_pack_items_with_llm(
     prompt = build_llm_prompt_for_pack(profile, technique_id, n_items, catalog)
 
     resp = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=os.getenv("OPENAI_TEXT_MODEL", "gpt-4o-mini"),
         messages=[
             {"role": "system", "content": "Return only strict JSON. No commentary. No markdown."},
             {"role": "user", "content": prompt},
@@ -478,9 +629,57 @@ def generate_pack_items_with_llm(
 
     items = data.get("items")
     if not isinstance(items, list) or not items:
-        raise ValueError("LLM returned invalid items list")
+        raise ValueError("OpenAI returned invalid items list")
 
     return items[:n_items]
+
+
+def _generate_pack_items_with_local_llm(
+    profile: dict,
+    technique_id: str,
+    n_items: int,
+    catalog: list[dict],
+) -> list[dict]:
+    prompt = build_llm_prompt_for_pack(profile, technique_id, n_items, catalog)
+    schema = _pack_items_schema(technique_id)
+
+    data = _ollama_chat_json(
+        model=_get_local_llm_model(),
+        system_prompt="Return only strict JSON matching the provided schema. No commentary. No markdown.",
+        user_prompt=prompt,
+        schema=schema,
+        temperature=0.2,
+    )
+
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        raise ValueError("Local LLM returned invalid items list")
+
+    return items[:n_items]
+
+
+def generate_pack_items(
+    profile: dict,
+    technique_id: str,
+    n_items: int,
+    catalog: list[dict],
+) -> list[dict]:
+    provider = _get_text_generation_provider(profile)
+
+    if provider == "local":
+        return _generate_pack_items_with_local_llm(
+            profile=profile,
+            technique_id=technique_id,
+            n_items=n_items,
+            catalog=catalog,
+        )
+
+    return _generate_pack_items_with_openai(
+        profile=profile,
+        technique_id=technique_id,
+        n_items=n_items,
+        catalog=catalog,
+    )
 
 
 # =========================================================
@@ -977,7 +1176,7 @@ async def build_content_pack(profile: dict, technique_id: str, n_items: int = 10
     difficulty = int(profile.get("difficulty", 1))
     catalog = load_image_catalog()
 
-    raw_items = generate_pack_items_with_llm(
+    raw_items = generate_pack_items(
         profile=profile,
         technique_id=technique_id,
         n_items=n_items,
