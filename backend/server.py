@@ -1033,12 +1033,37 @@ async def sentence_eval(
                 "score_level": 0,
                 "too_short": too_short,
                 "no_speech_prob": max_no_speech_prob,
+                "exact_match": False,
             }
 
         derived_content, derived_function = derive_targets_from_sentence(target_sentence)
-
         provided_content = parse_csv_list(required_content)
         provided_function = parse_csv_list(required_function)
+
+        # =====================================================
+        # Exact match shortcut
+        # =====================================================
+        if transcript_norm == target_norm and transcript_norm:
+            return {
+                "text": text,
+                "content_hits": len(derived_content),
+                "function_hits": len(derived_function),
+                "content_accuracy": 1.0,
+                "function_accuracy": 1.0,
+                "similarity_score": 1.0,
+                "weighted_accuracy": 1.0,
+                "rel_distance": 0.0,
+                "score_level": 3,
+                "too_short": False,
+                "no_speech_prob": max_no_speech_prob,
+                "exact_match": True,
+                "derived_content_items": derived_content,
+                "derived_function_items": derived_function,
+                "matched_content_items": derived_content,
+                "matched_function_items": derived_function,
+                "provided_content_items": provided_content,
+                "provided_function_items": provided_function,
+            }
 
         content_hits, content_accuracy, matched_content_items = compute_target_coverage(
             transcript_norm,
@@ -1081,6 +1106,7 @@ async def sentence_eval(
             "score_level": score_level,
             "too_short": False,
             "no_speech_prob": max_no_speech_prob,
+            "exact_match": False,
             "derived_content_items": derived_content,
             "derived_function_items": derived_function,
             "matched_content_items": matched_content_items,
@@ -1095,7 +1121,6 @@ async def sentence_eval(
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-
 
 # =========================================================
 # Optional speech feedback

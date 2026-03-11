@@ -324,10 +324,14 @@ export default function SentenceRepetition() {
       return;
     }
 
-    const acc =
-      typeof payload?.weighted_accuracy === "number"
-        ? ` (${Math.round(payload.weighted_accuracy * 100)}%)`
-        : "";
+    const shownPercent =
+      payload?.exact_match
+        ? 100
+        : typeof payload?.weighted_accuracy === "number"
+          ? Math.round(payload.weighted_accuracy * 100)
+          : null;
+
+    const acc = shownPercent != null ? ` (${shownPercent}%)` : "";
     setFeedback(`Incorrect. (+0)${acc}`);
     finalizeItem({ awardedPoints: 0, payload, scoreLevel });
   };
