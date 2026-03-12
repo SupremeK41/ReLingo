@@ -1094,21 +1094,23 @@ def _fallback_naming_with_cues_items(
         )
         if img:
             tags = (matched.get("tags") if matched else []) or [w]
+
+            semantic_cue = (
+                (matched.get("semantic_cue") if matched else "") or ""
+            )
+            phonemic_cue = (
+                (matched.get("phonemic_cue") if matched else "") or ""
+            )
+            full_cue = (
+                (matched.get("full_cue") if matched else "") or w
+            )
+
             out.append({
                 "word": w,
                 "image": img,
-                "semantic_cue": _clean_semantic_cue(
-                    w,
-                    tags,
-                    (matched.get("semantic_cue") if matched else "") or "",
-                ),
-                "phonemic_cue": _clean_phonemic_cue(
-                    w,
-                    (matched.get("phonemic_cue") if matched else "") or "",
-                ),
-                "full_cue": _clean_display_word(
-                    (matched.get("full_cue") if matched else "") or w
-                ) or w,
+                "semantic_cue": _clean_semantic_cue(w, tags, semantic_cue),
+                "phonemic_cue": _clean_phonemic_cue(w, phonemic_cue),
+                "full_cue": _clean_display_word(full_cue) or w,
                 "tags": tags,
                 "source": "catalog",
                 "matched_catalog_id": matched.get("id") if matched else None,
@@ -1118,7 +1120,6 @@ def _fallback_naming_with_cues_items(
                 break
 
     return out[:n_items]
-
 
 def _fallback_sentence_items(
     catalog: list[dict],
