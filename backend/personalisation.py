@@ -175,103 +175,19 @@ def _get_image_generation_mode(profile: dict) -> str:
 
 
 # =========================================================
-# Cue quality helpers
+# Cue cleaning helpers
+# IMPORTANT:
+# We no longer replace weak cues with generic fallback cues.
+# We only preserve catalog cues or AI-generated cues.
 # =========================================================
 
-def _default_semantic_cue(word: str, tags: list[str]) -> str:
-    word_n = _clean_display_word(word)
-    tag_list = [_clean_display_word(t) for t in tags if _clean_display_word(t)]
-
-    if "drink" in tag_list or word_n in {"milk", "juice", "water", "tea", "coffee"}:
-        return "You can drink it."
-    if "food" in tag_list or "fruit" in tag_list or "vegetable" in tag_list:
-        return "It is something you can eat."
-    if "animal" in tag_list:
-        return "It is an animal."
-    if "vehicle" in tag_list or "transport" in tag_list or word_n in {
-        "car", "bus", "train", "bike", "bicycle", "aeroplane", "airplane", "aircraft"
-    }:
-        return "It is used for travel or transport."
-    if "utensil" in tag_list or word_n in {"spoon", "fork", "knife"}:
-        return "You use it when eating."
-    if "device" in tag_list:
-        return "It is a device or tool you use."
-    if "tool" in tag_list:
-        return "It is a tool used for a task."
-    if "clothing" in tag_list or "clothes" in tag_list:
-        return "You wear it."
-    if "furniture" in tag_list or word_n in {"table", "chair", "bed"}:
-        return "It is something you use in a room at home."
-    if "person" in tag_list or word_n in {"adult", "boy", "girl", "man", "woman"}:
-        return "It is a person."
-    if "family" in tag_list:
-        return "It is connected to people in a family."
-    if "place" in tag_list or word_n in {"airport", "school", "shop", "house"}:
-        return "It is a place people go to."
-    return "It is something used in everyday life."
-
-
-def _default_phonemic_cue(word: str) -> str:
-    word = _clean_display_word(word)
-    if not word:
-        return ""
-
-    first = word.split()[0]
-    if len(first) >= 4:
-        return f"It starts with '{first[:2]}...'."
-    return f"It starts with '{first[:1]}'."
-
-
-def _semantic_cue_is_weak(word: str, cue: str) -> bool:
-    word_n = _clean_display_word(word)
-    cue_n = _norm(cue)
-
-    if not cue_n:
-        return True
-
-    weak_patterns = [
-        "it is related to",
-        "something related to",
-        "something to do with",
-        "it has to do with",
-        "related to",
-        "this is a",
-        "it is a thing",
-        "it is about",
-    ]
-    if any(p in cue_n for p in weak_patterns):
-        return True
-
-    if word_n and word_n in cue_n:
-        return True
-
-    if len(cue_n.split()) < 4:
-        return True
-
-    return False
-
-
-def _phonemic_cue_is_weak(cue: str) -> bool:
-    cue_n = _norm(cue)
-    return not cue_n or (
-        "start" not in cue_n
-        and "begins" not in cue_n
-        and "sound" not in cue_n
-        and "letter" not in cue_n
-    )
-
-
-def _clean_semantic_cue(word: str, tags: list[str], cue: str) -> str:
+def _clean_semantic_cue(cue: str) -> str:
     cue = re.sub(r"\s+", " ", str(cue or "").strip())
-    if _semantic_cue_is_weak(word, cue):
-        return _default_semantic_cue(word, tags)
     return cue[:180]
 
 
-def _clean_phonemic_cue(word: str, cue: str) -> str:
+def _clean_phonemic_cue(cue: str) -> str:
     cue = re.sub(r"\s+", " ", str(cue or "").strip())
-    if _phonemic_cue_is_weak(cue):
-        return _default_phonemic_cue(word)
     return cue[:120]
 
 
@@ -453,8 +369,6 @@ def _pick_catalog_image_strict(
     english_label: str | None = None,
 ) -> tuple[str | None, dict | None]:
     if technique_id == "naming_with_cues":
-        # Prefer direct naming_with_cues row first so cue metadata can be reused,
-        # then fall back to image_naming for shared picture library.
         cue_entries = _catalog_entries_for_technique(catalog, "naming_with_cues", difficulty)
         img, it = _find_catalog_match_by_word(cue_entries, word=word)
         if img:
@@ -981,8 +895,8 @@ def _validate_and_clean_items(profile: dict, technique_id: str, items: list[dict
                     "image_prompt": image_prompt,
                 })
             else:
-                semantic_cue = _clean_semantic_cue(word, tags, raw.get("semantic_cue", ""))
-                phonemic_cue = _clean_phonemic_cue(word, raw.get("phonemic_cue", ""))
+                semantic_cue = _clean_semantic_cue(raw.get("semantic_cue", ""))
+                phonemic_cue = _clean_phonemic_cue(raw.get("phonemic_cue", ""))
                 full_cue = _clean_display_word(raw.get("full_cue", "") or word) or word
 
                 out.append({
@@ -1095,21 +1009,15 @@ def _fallback_naming_with_cues_items(
         if img:
             tags = (matched.get("tags") if matched else []) or [w]
 
-            semantic_cue = (
-                (matched.get("semantic_cue") if matched else "") or ""
-            )
-            phonemic_cue = (
-                (matched.get("phonemic_cue") if matched else "") or ""
-            )
-            full_cue = (
-                (matched.get("full_cue") if matched else "") or w
-            )
+            semantic_cue = (matched.get("semantic_cue") if matched else "") or ""
+            phonemic_cue = (matched.get("phonemic_cue") if matched else "") or ""
+            full_cue = (matched.get("full_cue") if matched else "") or w
 
             out.append({
                 "word": w,
                 "image": img,
-                "semantic_cue": _clean_semantic_cue(w, tags, semantic_cue),
-                "phonemic_cue": _clean_phonemic_cue(w, phonemic_cue),
+                "semantic_cue": _clean_semantic_cue(semantic_cue),
+                "phonemic_cue": _clean_phonemic_cue(phonemic_cue),
                 "full_cue": _clean_display_word(full_cue) or w,
                 "tags": tags,
                 "source": "catalog",
@@ -1120,6 +1028,7 @@ def _fallback_naming_with_cues_items(
                 break
 
     return out[:n_items]
+
 
 def _fallback_sentence_items(
     catalog: list[dict],
@@ -1395,8 +1304,8 @@ def _build_naming_with_cues_row(
                 merged_tags.append(norm_t)
         tags = merged_tags or tags
 
-    # IMPORTANT:
-    # For naming_with_cues, prefer curated catalog cues over generated/base cues.
+    # Prefer curated catalog cues over AI-generated cues when a catalog item exists.
+    # Do not fall back to generic/default cues anymore.
     semantic_cue_source = (
         (matched_catalog_item.get("semantic_cue") if matched_catalog_item else "")
         or base_item.get("semantic_cue")
@@ -1416,15 +1325,8 @@ def _build_naming_with_cues_row(
     row = {
         "word": (base_item.get("word") or "").strip(),
         "image": image_path,
-        "semantic_cue": _clean_semantic_cue(
-            base_item.get("word", ""),
-            tags,
-            semantic_cue_source,
-        ),
-        "phonemic_cue": _clean_phonemic_cue(
-            base_item.get("word", ""),
-            phonemic_cue_source,
-        ),
+        "semantic_cue": _clean_semantic_cue(semantic_cue_source),
+        "phonemic_cue": _clean_phonemic_cue(phonemic_cue_source),
         "full_cue": _clean_display_word(full_cue_source) or _clean_display_word(base_item.get("word", "")),
         "tags": tags,
         "source": source,

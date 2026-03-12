@@ -269,7 +269,7 @@ export default function NamingWithCues() {
 
   const handleEvaluationResult = (payload) => {
     if (isNoSpeech(payload)) {
-      setFeedback("Didn’t catch that—try speaking a bit longer.");
+      setFeedback("Didn’t catch that. Try speaking a bit longer.");
       setLockedUntilNext(false);
       return;
     }
@@ -280,33 +280,35 @@ export default function NamingWithCues() {
       const pts = pointsForAttempt(attemptNum);
       setFeedback(
         attemptNum === 1
-          ? "Correct independently! (+3)"
+          ? "Correct independently. Plus 3 points."
           : attemptNum === 2
-            ? "Correct after semantic cue! (+2)"
-            : "Correct after phonemic cue! (+1)"
+            ? "Correct after the semantic cue. Plus 2 points."
+            : "Correct after the phonemic cue. Plus 1 point."
       );
       finalizeCurrentItem({ awardedPoints: pts, payload });
       return;
     }
 
     if (attemptNum === 1) {
+      const semanticCue = currentItem?.semantic_cue || "Here is a semantic cue.";
       setCueLevel(1);
       setAttemptNum(2);
-      setFeedback("Not quite — here is a semantic cue. Try again.");
+      setFeedback(`Not quite. Here is your semantic cue: ${semanticCue}`);
       setLockedUntilNext(false);
       return;
     }
 
     if (attemptNum === 2) {
+      const phonemicCue = currentItem?.phonemic_cue || "Here is a phonemic cue.";
       setCueLevel(2);
       setAttemptNum(3);
-      setFeedback("Still not quite — here is a phonemic cue. Try once more.");
+      setFeedback(`Still not quite. Here is your phonemic cue: ${phonemicCue}`);
       setLockedUntilNext(false);
       return;
     }
 
     setCueLevel(3);
-    setFeedback(`The word is "${currentItem?.full_cue || currentItem?.word || ""}". (+0)`);
+    setFeedback(`The word is ${currentItem?.full_cue || currentItem?.word || ""}. Zero points for this one.`);
     finalizeCurrentItem({ awardedPoints: 0, payload });
   };
 
