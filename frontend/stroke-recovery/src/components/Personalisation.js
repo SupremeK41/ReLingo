@@ -7,6 +7,7 @@ const API_BASE = "http://localhost:8000";
 
 const TECHNIQUES = [
   { id: "image_naming", label: "Image Naming" },
+  { id: "naming_with_cues", label: "Naming with Cues" },
   { id: "sentence_repetition", label: "Sentence Repetition" },
 ];
 
@@ -45,18 +46,22 @@ export default function Personalisation() {
     sentence_length: 1,
     cue_enabled: true,
     allow_generated_images: false,
-    image_generation_mode: "none", // "none" | "openai" | "local"
+    image_generation_mode: "none",
   });
 
   const [selectedTechnique, setSelectedTechnique] = useState("image_naming");
   const [lastPackSummary, setLastPackSummary] = useState(null);
 
   const isSentenceTechnique = selectedTechnique === "sentence_repetition";
+  const isCueTechnique = selectedTechnique === "naming_with_cues";
 
   const effectiveImageGenerationMode = useMemo(() => {
     if (!form.allow_generated_images) return "none";
     return form.image_generation_mode || "openai";
   }, [form.allow_generated_images, form.image_generation_mode]);
+
+  const selectedTechniqueLabel =
+    TECHNIQUES.find((t) => t.id === selectedTechnique)?.label || "Pack";
 
   const update = (key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -100,14 +105,13 @@ export default function Personalisation() {
 
       const backendAllowGenerated = !!data.allow_generated_images;
 
-      // Backend may not support image_generation_mode yet, so default cleanly.
       const backendMode =
         typeof data.image_generation_mode === "string" &&
         ["none", "openai", "local"].includes(data.image_generation_mode)
           ? data.image_generation_mode
           : backendAllowGenerated
-          ? "openai"
-          : "none";
+            ? "openai"
+            : "none";
 
       setForm({
         interests_text: data.interests_text ?? "",
@@ -252,8 +256,8 @@ export default function Personalisation() {
     effectiveImageGenerationMode === "local"
       ? "Local image generation selected."
       : effectiveImageGenerationMode === "openai"
-      ? "Online image generation selected."
-      : "Only curated library images will be used.";
+        ? "Online image generation selected."
+        : "Only curated library images will be used.";
 
   return (
     <div className="basic-speech-content">
@@ -431,7 +435,9 @@ export default function Personalisation() {
                     <div style={{ minWidth: 0, textAlign: "left" }}>
                       <div style={{ fontWeight: 700 }}>Enable cues</div>
                       <div style={{ opacity: 0.8, marginTop: 4, lineHeight: 1.5 }}>
-                        Show a hint after an incorrect attempt.
+                        {isCueTechnique
+                          ? "Allow ReLingo to build exercises that use semantic and phonemic cueing."
+                          : "Show a hint after an incorrect attempt."}
                       </div>
                     </div>
                   </label>
@@ -539,9 +545,7 @@ export default function Personalisation() {
                   }}
                   type="button"
                 >
-                  {generating
-                    ? "Generating..."
-                    : `Generate ${TECHNIQUES.find((t) => t.id === selectedTechnique)?.label || "Pack"}`}
+                  {generating ? "Generating..." : `Generate ${selectedTechniqueLabel}`}
                 </button>
               </div>
 
@@ -658,8 +662,8 @@ export default function Personalisation() {
                     {effectiveImageGenerationMode === "local"
                       ? "Local image generation"
                       : effectiveImageGenerationMode === "openai"
-                      ? "Online image generation"
-                      : "Curated library only"}
+                        ? "Online image generation"
+                        : "Curated library only"}
                   </strong>
                 </div>
 
@@ -681,7 +685,7 @@ export default function Personalisation() {
                     color: "#ffffff",
                   }}
                 >
-                  {TECHNIQUES.find((t) => t.id === selectedTechnique)?.label}
+                  {selectedTechniqueLabel}
                 </div>
 
                 <div style={{ marginTop: 20 }}>

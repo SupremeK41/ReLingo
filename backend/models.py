@@ -124,6 +124,59 @@ class UserDailyTechniqueStats(Model):
     class Meta:
         unique_together = (("user", "technique_id", "day"),)
 
+class UserItemPerformance(Model):
+    """
+    Per-user, per-technique, per-item lifetime tracking.
+    This is the key table for identifying difficult words/images/sentences.
+    """
+    id = fields.IntField(pk=True)
+
+    user = fields.ForeignKeyField(
+        "models.User",
+        related_name="item_performance",
+        on_delete=fields.CASCADE,
+    )
+
+    technique_id = fields.CharField(max_length=50)
+
+    # Stable identifier for the therapy target
+    item_key = fields.CharField(max_length=255)
+
+    # Human-readable label shown in analytics
+    item_label = fields.CharField(max_length=255)
+
+    # Optional image path for image-based techniques
+    image = fields.CharField(max_length=255, null=True)
+
+    # Core usage counts
+    times_seen = fields.IntField(default=0)
+    times_correct = fields.IntField(default=0)
+    times_incorrect = fields.IntField(default=0)
+
+    # Attempt quality
+    correct_first = fields.IntField(default=0)
+    correct_second = fields.IntField(default=0)
+    correct_after_cue = fields.IntField(default=0)
+
+    total_attempts = fields.IntField(default=0)
+    total_points = fields.IntField(default=0)
+
+    # Cue reliance
+    times_cue_shown = fields.IntField(default=0)
+
+    # Sentence-specific tracking
+    total_sentence_accuracy = fields.FloatField(default=0.0)
+    sentence_attempts = fields.IntField(default=0)
+
+    # Recency
+    last_result = fields.CharField(max_length=20, null=True)   # "correct" / "incorrect"
+    last_seen_at = fields.DatetimeField(auto_now=True)
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("user", "technique_id", "item_key"),)
+        indexes = (("user_id", "technique_id"), ("item_key",))
 
 # ---------------------------
 # Personalisation models

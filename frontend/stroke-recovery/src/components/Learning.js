@@ -4,7 +4,7 @@ import './Learning.css';
 import { useNavigate, Routes, Route } from 'react-router-dom';
 import BasicSpeech from './BasicSpeech';
 import SentenceRepetition from './SentenceRepetition';
-
+import NamingWithCues from './NamingWithCues';
 
 function Learning() {
     const navigate = useNavigate();
@@ -32,14 +32,15 @@ function Learning() {
         </div>
 
         <div className="learning-card">
-          <h2>Advanced</h2>
-          <p>Complex conversations and storytelling</p>
-          <button className="learning-button">Start</button>
+          <h2>Naming with Cues</h2>
+          <p>Use contextual clues to help with word retrieval</p>
+          <button className="learning-button" onClick={() => navigate('/naming-with-cues')}>Start</button>
         </div>
       </div>
       <Routes>
         <Route path="/basic-speech" element={<BasicSpeech/>} />
         <Route path="/sentence-repetition" element={<SentenceRepetition/>} />
+        <Route path="/naming-with-cues" element={<NamingWithCues/>} />
       </Routes>
     </div>
   );

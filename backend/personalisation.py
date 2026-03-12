@@ -1,4 +1,3 @@
-# backend/personalisation.py
 import base64
 import hashlib
 import json
@@ -23,20 +22,38 @@ from local_image_generation import generate_image_via_comfyui, LocalImageGenerat
 BACKEND_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BACKEND_DIR.parent
 PUBLIC_DIR = PROJECT_ROOT / "frontend" / "stroke-recovery" / "public"
-CATALOG_PATH = PUBLIC_DIR / "image_catalog.json"
+
+# Unified therapy catalog
+CATALOG_PATH = PUBLIC_DIR / "therapy_catalog.json"
 
 GENERATED_DIR = PUBLIC_DIR / "generated"
 GENERATED_IMAGE_NAMING_DIR = GENERATED_DIR / "image_naming"
+GENERATED_NAMING_WITH_CUES_DIR = GENERATED_DIR / "naming_with_cues"
 GENERATED_SENTENCE_DIR = GENERATED_DIR / "sentence_repetition"
 
 GENERATED_IMAGE_NAMING_DIR.mkdir(parents=True, exist_ok=True)
+GENERATED_NAMING_WITH_CUES_DIR.mkdir(parents=True, exist_ok=True)
 GENERATED_SENTENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_image_catalog() -> list[dict]:
     if not CATALOG_PATH.exists():
         return []
-    return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+
+    raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+
+    if isinstance(raw, dict):
+        merged: list[dict] = []
+        for key in ("image_naming", "naming_with_cues", "sentence_repetition"):
+            value = raw.get(key, [])
+            if isinstance(value, list):
+                merged.extend([x for x in value if isinstance(x, dict)])
+        return merged
+
+    if isinstance(raw, list):
+        return [x for x in raw if isinstance(x, dict)]
+
+    return []
 
 
 # =========================================================
@@ -44,11 +61,6 @@ def load_image_catalog() -> list[dict]:
 # =========================================================
 
 def _get_text_generation_provider(profile: dict | None = None) -> str:
-    """
-    Controls therapy item text generation:
-    - openai
-    - local
-    """
     provider = os.getenv("TEXT_GENERATION_PROVIDER", "openai").strip().lower()
     if provider not in {"openai", "local"}:
         provider = "openai"
@@ -56,7 +68,7 @@ def _get_text_generation_provider(profile: dict | None = None) -> str:
 
 
 def _get_local_llm_model() -> str:
-    return os.getenv("LOCAL_LLM_MODEL", "gemma3").strip() or "gemma3"
+    return os.getenv("LOCAL_LLM_MODEL", "gemma3:4b").strip() or "gemma3:4b"
 
 
 def _get_ollama_base_url() -> str:
@@ -134,7 +146,7 @@ def _ensure_list_of_tags(x: Any, max_len: int = 8) -> list[str]:
     out: list[str] = []
     for item in x:
         t = _norm(str(item))
-        if t:
+        if t and t not in out:
             out.append(t)
         if len(out) >= max_len:
             break
@@ -163,8 +175,116 @@ def _get_image_generation_mode(profile: dict) -> str:
 
 
 # =========================================================
+# Cue quality helpers
+# =========================================================
+
+def _default_semantic_cue(word: str, tags: list[str]) -> str:
+    word_n = _clean_display_word(word)
+    tag_list = [_clean_display_word(t) for t in tags if _clean_display_word(t)]
+
+    if "drink" in tag_list or word_n in {"milk", "juice", "water", "tea", "coffee"}:
+        return "You can drink it."
+    if "food" in tag_list or "fruit" in tag_list or "vegetable" in tag_list:
+        return "It is something you can eat."
+    if "animal" in tag_list:
+        return "It is an animal."
+    if "vehicle" in tag_list or "transport" in tag_list or word_n in {
+        "car", "bus", "train", "bike", "bicycle", "aeroplane", "airplane", "aircraft"
+    }:
+        return "It is used for travel or transport."
+    if "utensil" in tag_list or word_n in {"spoon", "fork", "knife"}:
+        return "You use it when eating."
+    if "device" in tag_list:
+        return "It is a device or tool you use."
+    if "tool" in tag_list:
+        return "It is a tool used for a task."
+    if "clothing" in tag_list or "clothes" in tag_list:
+        return "You wear it."
+    if "furniture" in tag_list or word_n in {"table", "chair", "bed"}:
+        return "It is something you use in a room at home."
+    if "person" in tag_list or word_n in {"adult", "boy", "girl", "man", "woman"}:
+        return "It is a person."
+    if "family" in tag_list:
+        return "It is connected to people in a family."
+    if "place" in tag_list or word_n in {"airport", "school", "shop", "house"}:
+        return "It is a place people go to."
+    return "It is something used in everyday life."
+
+
+def _default_phonemic_cue(word: str) -> str:
+    word = _clean_display_word(word)
+    if not word:
+        return ""
+
+    first = word.split()[0]
+    if len(first) >= 4:
+        return f"It starts with '{first[:2]}...'."
+    return f"It starts with '{first[:1]}'."
+
+
+def _semantic_cue_is_weak(word: str, cue: str) -> bool:
+    word_n = _clean_display_word(word)
+    cue_n = _norm(cue)
+
+    if not cue_n:
+        return True
+
+    weak_patterns = [
+        "it is related to",
+        "something related to",
+        "something to do with",
+        "it has to do with",
+        "related to",
+        "this is a",
+        "it is a thing",
+        "it is about",
+    ]
+    if any(p in cue_n for p in weak_patterns):
+        return True
+
+    if word_n and word_n in cue_n:
+        return True
+
+    if len(cue_n.split()) < 4:
+        return True
+
+    return False
+
+
+def _phonemic_cue_is_weak(cue: str) -> bool:
+    cue_n = _norm(cue)
+    return not cue_n or (
+        "start" not in cue_n
+        and "begins" not in cue_n
+        and "sound" not in cue_n
+        and "letter" not in cue_n
+    )
+
+
+def _clean_semantic_cue(word: str, tags: list[str], cue: str) -> str:
+    cue = re.sub(r"\s+", " ", str(cue or "").strip())
+    if _semantic_cue_is_weak(word, cue):
+        return _default_semantic_cue(word, tags)
+    return cue[:180]
+
+
+def _clean_phonemic_cue(word: str, cue: str) -> str:
+    cue = re.sub(r"\s+", " ", str(cue or "").strip())
+    if _phonemic_cue_is_weak(cue):
+        return _default_phonemic_cue(word)
+    return cue[:120]
+
+
+# =========================================================
 # Catalog querying
 # =========================================================
+
+def _safe_item_difficulty(it: dict) -> int:
+    try:
+        return int(it.get("difficulty", 1))
+    except Exception:
+        return 1
+
 
 def _catalog_entries_for_technique(
     catalog: list[dict],
@@ -174,7 +294,8 @@ def _catalog_entries_for_technique(
     return [
         it for it in catalog
         if it.get("technique") == technique_id
-        and int(it.get("difficulty", 1)) <= int(difficulty)
+        and _safe_item_difficulty(it) <= int(difficulty)
+        and bool(it.get("keep", True))
     ]
 
 
@@ -237,6 +358,39 @@ def _get_image_naming_candidates(
     return words
 
 
+def _get_naming_with_cues_candidates(
+    catalog: list[dict],
+    difficulty: int,
+    interests_text: str,
+    avoid_topics_text: str,
+    limit: int = 200,
+) -> list[str]:
+    cue_entries = _catalog_entries_for_technique(catalog, "naming_with_cues", difficulty)
+    image_entries = _catalog_entries_for_technique(catalog, "image_naming", difficulty)
+
+    preferred_cue, general_cue = _filter_catalog_by_interests(
+        cue_entries, interests_text, avoid_topics_text
+    )
+    preferred_img, general_img = _filter_catalog_by_interests(
+        image_entries, interests_text, avoid_topics_text
+    )
+
+    seen = set()
+    words = []
+
+    for pool in (preferred_cue, general_cue, preferred_img, general_img):
+        for it in pool:
+            word = _clean_display_word(it.get("word", ""))
+            if not word or word in seen:
+                continue
+            seen.add(word)
+            words.append(word)
+            if len(words) >= limit:
+                return words
+
+    return words
+
+
 def _get_sentence_candidates(
     catalog: list[dict],
     difficulty: int,
@@ -268,6 +422,29 @@ def _get_sentence_candidates(
     return out
 
 
+def _find_catalog_match_by_word(
+    entries: list[dict],
+    word: str | None = None,
+) -> tuple[str | None, dict | None]:
+    target = _norm(word or "")
+    if not target:
+        return None, None
+
+    for it in entries:
+        if _norm(it.get("word", "")) == target:
+            img = _image_field(it)
+            if img:
+                return img, it
+
+    for it in entries:
+        if _norm(it.get("id", "")) == target:
+            img = _image_field(it)
+            if img:
+                return img, it
+
+    return None, None
+
+
 def _pick_catalog_image_strict(
     catalog: list[dict],
     difficulty: int,
@@ -275,22 +452,27 @@ def _pick_catalog_image_strict(
     word: str | None = None,
     english_label: str | None = None,
 ) -> tuple[str | None, dict | None]:
-    entries = _catalog_entries_for_technique(catalog, technique_id, difficulty)
+    if technique_id == "naming_with_cues":
+        # Prefer direct naming_with_cues row first so cue metadata can be reused,
+        # then fall back to image_naming for shared picture library.
+        cue_entries = _catalog_entries_for_technique(catalog, "naming_with_cues", difficulty)
+        img, it = _find_catalog_match_by_word(cue_entries, word=word)
+        if img:
+            return img, it
 
-    if technique_id == "image_naming" and word:
-        target = _norm(word)
-        for it in entries:
-            if _norm(it.get("word", "")) == target:
-                img = _image_field(it)
-                if img:
-                    return img, it
+        image_entries = _catalog_entries_for_technique(catalog, "image_naming", difficulty)
+        img, it = _find_catalog_match_by_word(image_entries, word=word)
+        if img:
+            return img, it
 
-            if _norm(it.get("id", "")) == target:
-                img = _image_field(it)
-                if img:
-                    return img, it
+        return None, None
+
+    if technique_id == "image_naming":
+        entries = _catalog_entries_for_technique(catalog, "image_naming", difficulty)
+        return _find_catalog_match_by_word(entries, word=word)
 
     if technique_id == "sentence_repetition" and english_label:
+        entries = _catalog_entries_for_technique(catalog, "sentence_repetition", difficulty)
         target = _norm(english_label)
         for it in entries:
             label = _norm(it.get("english_label", ""))
@@ -339,13 +521,23 @@ def build_llm_prompt_for_pack(
     avoid = (profile.get("avoid_topics_text") or "").strip()
     allow_generated_images = bool(profile.get("allow_generated_images", False))
 
-    if technique_id == "image_naming":
-        candidate_words = _get_image_naming_candidates(
-            catalog=catalog,
-            difficulty=difficulty,
-            interests_text=interests,
-            avoid_topics_text=avoid,
-            limit=250,
+    if technique_id in {"image_naming", "naming_with_cues"}:
+        candidate_words = (
+            _get_naming_with_cues_candidates(
+                catalog=catalog,
+                difficulty=difficulty,
+                interests_text=interests,
+                avoid_topics_text=avoid,
+                limit=250,
+            )
+            if technique_id == "naming_with_cues"
+            else _get_image_naming_candidates(
+                catalog=catalog,
+                difficulty=difficulty,
+                interests_text=interests,
+                avoid_topics_text=avoid,
+                limit=250,
+            )
         )
 
         candidate_preview = ", ".join(candidate_words[:120])
@@ -356,7 +548,8 @@ def build_llm_prompt_for_pack(
             else "You MUST choose only from the provided catalog word pool."
         )
 
-        return f"""
+        if technique_id == "image_naming":
+            return f"""
 Return STRICT JSON ONLY (no markdown, no commentary, no extra keys).
 
 You are generating personalised image-naming therapy items for a stroke-recovery app.
@@ -391,6 +584,56 @@ Schema:
   "items": [
     {{
       "word": "string",
+      "tags": ["tag1","tag2","tag3"],
+      "image_prompt": "string"
+    }}
+  ]
+}}
+""".strip()
+
+        return f"""
+Return STRICT JSON ONLY (no markdown, no commentary, no extra keys).
+
+You are generating personalised cue-based naming therapy items for a stroke-recovery app.
+
+User interests/routine: {interests}
+Avoid topics: {avoid}
+Target difficulty: {difficulty}
+
+Available curated catalog word pool:
+{candidate_preview}
+
+Rules:
+- Exactly {n_items} items.
+- Each item must follow:
+{{
+  "word": "string",
+  "semantic_cue": "string",
+  "phonemic_cue": "string",
+  "full_cue": "string",
+  "tags": ["tag1","tag2","tag3"],
+  "image_prompt": "string"
+}}
+
+- "word" should be a concrete, everyday, easy-to-picture target.
+- Prefer common household items, food, transport, animals, hobbies, places, or routine objects.
+- Avoid abstract, unsafe, medical, legal, political, upsetting, or confusing targets.
+- semantic_cue must help identify the word without directly saying the word itself.
+- semantic_cue should sound clinically useful, like a real therapy hint.
+- phonemic_cue should give the starting sound, first letter, or first syllable.
+- full_cue must be the exact target word.
+- image_prompt must clearly describe one simple recognisable image for the target word.
+- {mode_rule}
+- Output JSON only.
+
+Schema:
+{{
+  "items": [
+    {{
+      "word": "string",
+      "semantic_cue": "string",
+      "phonemic_cue": "string",
+      "full_cue": "string",
       "tags": ["tag1","tag2","tag3"],
       "image_prompt": "string"
     }}
@@ -493,13 +736,41 @@ def _pack_items_schema(technique_id: str) -> dict:
                         "type": "object",
                         "properties": {
                             "word": {"type": "string"},
-                            "tags": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
+                            "tags": {"type": "array", "items": {"type": "string"}},
                             "image_prompt": {"type": "string"},
                         },
                         "required": ["word", "tags", "image_prompt"],
+                    },
+                }
+            },
+            "required": ["items"],
+        }
+
+    if technique_id == "naming_with_cues":
+        return {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "word": {"type": "string"},
+                            "semantic_cue": {"type": "string"},
+                            "phonemic_cue": {"type": "string"},
+                            "full_cue": {"type": "string"},
+                            "tags": {"type": "array", "items": {"type": "string"}},
+                            "image_prompt": {"type": "string"},
+                        },
+                        "required": [
+                            "word",
+                            "semantic_cue",
+                            "phonemic_cue",
+                            "full_cue",
+                            "tags",
+                            "image_prompt",
+                        ],
                     },
                 }
             },
@@ -516,18 +787,9 @@ def _pack_items_schema(technique_id: str) -> dict:
                     "type": "object",
                     "properties": {
                         "sentence": {"type": "string"},
-                        "required_content": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        },
-                        "required_function": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        },
-                        "tags": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                        },
+                        "required_content": {"type": "array", "items": {"type": "string"}},
+                        "required_function": {"type": "array", "items": {"type": "string"}},
+                        "tags": {"type": "array", "items": {"type": "string"}},
                         "image_prompt": {"type": "string"},
                     },
                     "required": [
@@ -555,9 +817,6 @@ def _ollama_chat_json(
     schema: dict,
     temperature: float = 0.2,
 ) -> dict:
-    """
-    Calls a local Ollama server and requests structured JSON output.
-    """
     url = f"{_get_ollama_base_url()}/api/chat"
 
     payload = {
@@ -701,7 +960,7 @@ def _validate_and_clean_items(profile: dict, technique_id: str, items: list[dict
         if not isinstance(raw, dict):
             continue
 
-        if technique_id == "image_naming":
+        if technique_id in {"image_naming", "naming_with_cues"}:
             word = _clean_display_word(raw.get("word", ""))
             if not word:
                 continue
@@ -715,11 +974,25 @@ def _validate_and_clean_items(profile: dict, technique_id: str, items: list[dict
             )
             image_prompt = _clean_image_prompt(raw.get("image_prompt", ""), fallback_prompt)
 
-            out.append({
-                "word": word,
-                "tags": tags[:8],
-                "image_prompt": image_prompt,
-            })
+            if technique_id == "image_naming":
+                out.append({
+                    "word": word,
+                    "tags": tags[:8],
+                    "image_prompt": image_prompt,
+                })
+            else:
+                semantic_cue = _clean_semantic_cue(word, tags, raw.get("semantic_cue", ""))
+                phonemic_cue = _clean_phonemic_cue(word, raw.get("phonemic_cue", ""))
+                full_cue = _clean_display_word(raw.get("full_cue", "") or word) or word
+
+                out.append({
+                    "word": word,
+                    "semantic_cue": semantic_cue,
+                    "phonemic_cue": phonemic_cue,
+                    "full_cue": full_cue,
+                    "tags": tags[:8],
+                    "image_prompt": image_prompt,
+                })
 
         else:
             sentence = _clean_sentence(raw.get("sentence", ""))
@@ -767,8 +1040,14 @@ def _fallback_image_naming_items(
         catalog, difficulty, interests_text, avoid_topics_text, limit=max(50, n_items * 5)
     )
     out = []
-    for w in words[:n_items]:
-        img, _matched = _pick_catalog_image_strict(
+    seen = set()
+
+    for w in words:
+        if w in seen:
+            continue
+        seen.add(w)
+
+        img, matched = _pick_catalog_image_strict(
             catalog=catalog,
             difficulty=difficulty,
             technique_id="image_naming",
@@ -778,9 +1057,66 @@ def _fallback_image_naming_items(
             out.append({
                 "word": w,
                 "image": img,
+                "tags": (matched.get("tags") if matched else []) or [w],
                 "source": "catalog",
+                "matched_catalog_id": matched.get("id") if matched else None,
                 "image_prompt": f"A simple clear therapy-style illustration of {w}, centered, easy to recognise, plain background.",
             })
+            if len(out) >= n_items:
+                break
+
+    return out[:n_items]
+
+
+def _fallback_naming_with_cues_items(
+    catalog: list[dict],
+    difficulty: int,
+    interests_text: str,
+    avoid_topics_text: str,
+    n_items: int,
+) -> list[dict]:
+    words = _get_naming_with_cues_candidates(
+        catalog, difficulty, interests_text, avoid_topics_text, limit=max(50, n_items * 5)
+    )
+    out = []
+    seen = set()
+
+    for w in words:
+        if w in seen:
+            continue
+        seen.add(w)
+
+        img, matched = _pick_catalog_image_strict(
+            catalog=catalog,
+            difficulty=difficulty,
+            technique_id="naming_with_cues",
+            word=w,
+        )
+        if img:
+            tags = (matched.get("tags") if matched else []) or [w]
+            out.append({
+                "word": w,
+                "image": img,
+                "semantic_cue": _clean_semantic_cue(
+                    w,
+                    tags,
+                    (matched.get("semantic_cue") if matched else "") or "",
+                ),
+                "phonemic_cue": _clean_phonemic_cue(
+                    w,
+                    (matched.get("phonemic_cue") if matched else "") or "",
+                ),
+                "full_cue": _clean_display_word(
+                    (matched.get("full_cue") if matched else "") or w
+                ) or w,
+                "tags": tags,
+                "source": "catalog",
+                "matched_catalog_id": matched.get("id") if matched else None,
+                "image_prompt": f"A simple clear therapy-style illustration of {w}, centered, easy to recognise, plain background.",
+            })
+            if len(out) >= n_items:
+                break
+
     return out[:n_items]
 
 
@@ -796,12 +1132,20 @@ def _fallback_sentence_items(
     )
 
     out = []
-    for it in entries[:n_items]:
-        label = (it.get("english_label") or "").strip()
-        tags = it.get("tags", [])
+    seen = set()
+
+    for it in entries:
         image = it.get("image")
         if not image:
             continue
+
+        key = it.get("id") or it.get("english_label") or image
+        if key in seen:
+            continue
+        seen.add(key)
+
+        label = (it.get("english_label") or "").strip()
+        tags = it.get("tags", [])
 
         sentence = label.replace("_", " ").strip().capitalize()
         if sentence and not sentence.endswith("."):
@@ -812,9 +1156,14 @@ def _fallback_sentence_items(
             "image": image,
             "required_content": [t for t in tags[:3] if _clean_token(t)],
             "required_function": ["the"],
+            "tags": tags,
             "source": "catalog",
+            "matched_catalog_id": it.get("id"),
             "image_prompt": f"A simple clear therapy-style illustration showing: {sentence or 'The person is doing an activity.'}",
         })
+
+        if len(out) >= n_items:
+            break
 
     return out[:n_items]
 
@@ -826,17 +1175,21 @@ def _fallback_sentence_items(
 def _generated_output_dir(technique_id: str) -> Path:
     if technique_id == "image_naming":
         return GENERATED_IMAGE_NAMING_DIR
+    if technique_id == "naming_with_cues":
+        return GENERATED_NAMING_WITH_CUES_DIR
     return GENERATED_SENTENCE_DIR
 
 
 def _generated_public_path(technique_id: str, filename: str) -> str:
     if technique_id == "image_naming":
         return f"generated/image_naming/{filename}"
+    if technique_id == "naming_with_cues":
+        return f"generated/naming_with_cues/{filename}"
     return f"generated/sentence_repetition/{filename}"
 
 
 def _build_image_generation_prompt(technique_id: str, item: dict) -> str:
-    if technique_id == "image_naming":
+    if technique_id in {"image_naming", "naming_with_cues"}:
         word = item.get("word", "")
         base_prompt = item.get("image_prompt", "")
         return (
@@ -957,6 +1310,8 @@ async def _generate_image_locally(
 
     if technique_id == "image_naming":
         save_prefix = f"generated/image_naming/{stem}_{prompt_hash[:10]}"
+    elif technique_id == "naming_with_cues":
+        save_prefix = f"generated/naming_with_cues/{stem}_{prompt_hash[:10]}"
     else:
         save_prefix = f"generated/sentence_repetition/{stem}_{prompt_hash[:10]}"
 
@@ -1021,6 +1376,67 @@ async def _generate_image_with_selected_method(
 # Image attachment / resolution
 # =========================================================
 
+def _build_naming_with_cues_row(
+    base_item: dict,
+    image_path: str,
+    source: str,
+    matched_catalog_item: dict | None = None,
+    generation_method: str | None = None,
+) -> dict:
+    tags = base_item.get("tags") or []
+    if matched_catalog_item and matched_catalog_item.get("tags"):
+        merged_tags = []
+        seen = set()
+        for t in list(matched_catalog_item.get("tags") or []) + list(tags):
+            norm_t = _norm(str(t))
+            if norm_t and norm_t not in seen:
+                seen.add(norm_t)
+                merged_tags.append(norm_t)
+        tags = merged_tags or tags
+
+    # IMPORTANT:
+    # For naming_with_cues, prefer curated catalog cues over generated/base cues.
+    semantic_cue_source = (
+        (matched_catalog_item.get("semantic_cue") if matched_catalog_item else "")
+        or base_item.get("semantic_cue")
+        or ""
+    )
+    phonemic_cue_source = (
+        (matched_catalog_item.get("phonemic_cue") if matched_catalog_item else "")
+        or base_item.get("phonemic_cue")
+        or ""
+    )
+    full_cue_source = (
+        (matched_catalog_item.get("full_cue") if matched_catalog_item else "")
+        or base_item.get("full_cue")
+        or base_item.get("word", "")
+    )
+
+    row = {
+        "word": (base_item.get("word") or "").strip(),
+        "image": image_path,
+        "semantic_cue": _clean_semantic_cue(
+            base_item.get("word", ""),
+            tags,
+            semantic_cue_source,
+        ),
+        "phonemic_cue": _clean_phonemic_cue(
+            base_item.get("word", ""),
+            phonemic_cue_source,
+        ),
+        "full_cue": _clean_display_word(full_cue_source) or _clean_display_word(base_item.get("word", "")),
+        "tags": tags,
+        "source": source,
+        "image_prompt": base_item.get("image_prompt", ""),
+        "matched_catalog_id": matched_catalog_item.get("id") if matched_catalog_item else None,
+    }
+
+    if generation_method:
+        row["generation_method"] = generation_method
+
+    return row
+
+
 async def attach_images_to_items(
     items: list[dict],
     catalog: list[dict],
@@ -1036,8 +1452,8 @@ async def attach_images_to_items(
     print("[ATTACH] item_count:", len(items))
 
     for it in items:
-        # TEMPORARY: force local generation for image naming
-        if technique_id == "image_naming" and generation_mode == "local":
+        # Keep your temporary demo behaviour for local generation on naming tasks.
+        if technique_id in {"image_naming", "naming_with_cues"} and generation_mode == "local":
             print("[ATTACH] FORCE LOCAL GENERATION for word:", it.get("word", ""))
 
             gen_img, gen_method = await _generate_image_with_selected_method(
@@ -1047,20 +1463,31 @@ async def attach_images_to_items(
                 profile=profile,
             )
             if gen_img:
-                out.append({
-                    "word": (it.get("word") or "").strip(),
-                    "image": gen_img,
-                    "tags": it.get("tags") or [],
-                    "source": "generated",
-                    "generation_method": gen_method,
-                    "image_prompt": it.get("image_prompt", ""),
-                    "matched_catalog_id": None,
-                })
+                if technique_id == "image_naming":
+                    out.append({
+                        "word": (it.get("word") or "").strip(),
+                        "image": gen_img,
+                        "tags": it.get("tags") or [],
+                        "source": "generated",
+                        "generation_method": gen_method,
+                        "image_prompt": it.get("image_prompt", ""),
+                        "matched_catalog_id": None,
+                    })
+                else:
+                    out.append(
+                        _build_naming_with_cues_row(
+                            base_item=it,
+                            image_path=gen_img,
+                            source="generated",
+                            matched_catalog_item=None,
+                            generation_method=gen_method,
+                        )
+                    )
                 continue
 
             print("[ATTACH] Local generation failed, falling back to curated match for:", it.get("word", ""))
 
-        if technique_id == "image_naming":
+        if technique_id in {"image_naming", "naming_with_cues"}:
             img, matched_catalog_item = _pick_catalog_image_strict(
                 catalog=catalog,
                 difficulty=difficulty,
@@ -1070,14 +1497,25 @@ async def attach_images_to_items(
 
             if img:
                 print("[ATTACH] curated image used for:", it.get("word", ""), "->", img)
-                out.append({
-                    "word": (it.get("word") or "").strip(),
-                    "image": img,
-                    "tags": it.get("tags") or [],
-                    "source": "catalog",
-                    "image_prompt": it.get("image_prompt", ""),
-                    "matched_catalog_id": matched_catalog_item.get("id") if matched_catalog_item else None,
-                })
+
+                if technique_id == "image_naming":
+                    out.append({
+                        "word": (it.get("word") or "").strip(),
+                        "image": img,
+                        "tags": it.get("tags") or [],
+                        "source": "catalog",
+                        "image_prompt": it.get("image_prompt", ""),
+                        "matched_catalog_id": matched_catalog_item.get("id") if matched_catalog_item else None,
+                    })
+                else:
+                    out.append(
+                        _build_naming_with_cues_row(
+                            base_item=it,
+                            image_path=img,
+                            source="catalog",
+                            matched_catalog_item=matched_catalog_item,
+                        )
+                    )
                 continue
 
             if generation_mode != "none":
@@ -1089,15 +1527,26 @@ async def attach_images_to_items(
                     profile=profile,
                 )
                 if gen_img:
-                    out.append({
-                        "word": (it.get("word") or "").strip(),
-                        "image": gen_img,
-                        "tags": it.get("tags") or [],
-                        "source": "generated",
-                        "generation_method": gen_method,
-                        "image_prompt": it.get("image_prompt", ""),
-                        "matched_catalog_id": None,
-                    })
+                    if technique_id == "image_naming":
+                        out.append({
+                            "word": (it.get("word") or "").strip(),
+                            "image": gen_img,
+                            "tags": it.get("tags") or [],
+                            "source": "generated",
+                            "generation_method": gen_method,
+                            "image_prompt": it.get("image_prompt", ""),
+                            "matched_catalog_id": None,
+                        })
+                    else:
+                        out.append(
+                            _build_naming_with_cues_row(
+                                base_item=it,
+                                image_path=gen_img,
+                                source="generated",
+                                matched_catalog_item=None,
+                                generation_method=gen_method,
+                            )
+                        )
                     continue
 
         else:
@@ -1149,6 +1598,14 @@ async def attach_images_to_items(
 
         if technique_id == "image_naming":
             fillers = _fallback_image_naming_items(
+                catalog=catalog,
+                difficulty=difficulty,
+                interests_text=profile.get("interests_text", ""),
+                avoid_topics_text=profile.get("avoid_topics_text", ""),
+                n_items=missing,
+            )
+        elif technique_id == "naming_with_cues":
+            fillers = _fallback_naming_with_cues_items(
                 catalog=catalog,
                 difficulty=difficulty,
                 interests_text=profile.get("interests_text", ""),

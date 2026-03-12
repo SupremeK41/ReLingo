@@ -21,6 +21,7 @@ from models import (
     UserDailyTechniqueStats,
     UserProfile,
     UserContentPack,
+    UserItemPerformance,
 )
 from schemas import UserOut, UserProfileIn, UserProfileOut, ContentPackOut
 from personalisation import build_content_pack
@@ -61,6 +62,12 @@ _PROMPT_LEAK_PHRASES = (
 
 _MIN_WEBM_BYTES = 12000
 _NO_SPEECH_PROB_CUTOFF = 0.80
+
+SUPPORTED_TECHNIQUE_IDS = {
+    "image_naming",
+    "naming_with_cues",
+    "sentence_repetition",
+}
 
 DEFAULT_FUNCTION_WORDS = {
     "a", "an", "the",
@@ -426,6 +433,213 @@ def _safe_int(x, default=0) -> int:
         return default
 
 
+def _validate_technique_id(technique_id: str) -> str:
+    technique_id = (technique_id or "").strip()
+    if technique_id not in SUPPORTED_TECHNIQUE_IDS:
+        raise HTTPException(status_code=400, detail="Unknown technique_id")
+    return technique_id
+
+
+def _item_key_for_analytics(technique_id: str, target: str) -> str:
+    target_norm = normalize_text(target)
+    return f"{technique_id}::{target_norm}" if target_norm else f"{technique_id}::unknown"
+
+
+def _item_label_for_analytics(target: str) -> str:
+    target = re.sub(r"\s+", " ", (target or "").strip())
+    return target[:255] if target else "Unknown item"
+
+
+async def _get_item_image_from_active_pack(user: User, technique_id: str, target: str) -> str | None:
+    row = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
+    if not row or not row.pack_json:
+        return None
+
+    items = row.pack_json.get("items", []) or []
+    target_norm = normalize_text(target)
+
+    for item in items:
+        item_word = normalize_text(item.get("word"))
+        item_sentence = normalize_text(item.get("sentence"))
+        if target_norm and (item_word == target_norm or item_sentence == target_norm):
+            image = item.get("image")
+            if image:
+                return image
+
+    return None
+
+
+async def _update_item_performance(
+    user: User,
+    technique_id: str,
+    score_item,
+) -> None:
+    target = (score_item.target or "").strip()
+    if not target:
+        return
+
+    item_key = _item_key_for_analytics(technique_id, target)
+    item_label = _item_label_for_analytics(target)
+    image = await _get_item_image_from_active_pack(user, technique_id, target)
+
+    perf = await UserItemPerformance.get_or_none(
+        user=user,
+        technique_id=technique_id,
+        item_key=item_key,
+    )
+
+    if not perf:
+        perf = await UserItemPerformance.create(
+            user=user,
+            technique_id=technique_id,
+            item_key=item_key,
+            item_label=item_label,
+            image=image,
+            times_seen=0,
+            times_correct=0,
+            times_incorrect=0,
+            correct_first=0,
+            correct_second=0,
+            correct_after_cue=0,
+            total_attempts=0,
+            total_points=0,
+            times_cue_shown=0,
+            total_sentence_accuracy=0.0,
+            sentence_attempts=0,
+            last_result=None,
+        )
+
+    perf.item_label = item_label
+    if image:
+        perf.image = image
+
+    perf.times_seen += 1
+    perf.total_attempts += max(0, _safe_int(score_item.attemptsUsed))
+    perf.total_points += max(0, _safe_int(score_item.awardedPoints))
+
+    if bool(score_item.cueShown):
+        perf.times_cue_shown += 1
+
+    pts = _safe_int(score_item.awardedPoints)
+    if pts == 3:
+        perf.times_correct += 1
+        perf.correct_first += 1
+        perf.last_result = "correct"
+    elif pts == 2:
+        perf.times_correct += 1
+        perf.correct_second += 1
+        perf.last_result = "correct"
+    elif pts == 1:
+        perf.times_correct += 1
+        perf.correct_after_cue += 1
+        perf.last_result = "correct"
+    else:
+        perf.times_incorrect += 1
+        perf.last_result = "incorrect"
+
+    if score_item.sentence_accuracy is not None:
+        perf.total_sentence_accuracy += float(score_item.sentence_accuracy)
+        perf.sentence_attempts += 1
+
+    await perf.save()
+
+
+def _build_item_metric_row(row: UserItemPerformance) -> dict:
+    times_seen = _safe_int(row.times_seen)
+    total_attempts = _safe_int(row.total_attempts)
+    times_correct = _safe_int(row.times_correct)
+    times_incorrect = _safe_int(row.times_incorrect)
+    times_cue_shown = _safe_int(row.times_cue_shown)
+
+    first_try_rate = row.correct_first / times_seen if times_seen > 0 else 0.0
+    avg_attempts = total_attempts / times_seen if times_seen > 0 else 0.0
+    cue_rate = times_cue_shown / times_seen if times_seen > 0 else 0.0
+    sentence_accuracy = (
+        row.total_sentence_accuracy / row.sentence_attempts
+        if row.sentence_attempts > 0 else None
+    )
+    success_rate = times_correct / times_seen if times_seen > 0 else 0.0
+
+    return {
+        "item_key": row.item_key,
+        "item_label": row.item_label,
+        "image": row.image,
+        "technique_id": row.technique_id,
+        "times_seen": times_seen,
+        "times_correct": times_correct,
+        "times_incorrect": times_incorrect,
+        "correct_first": _safe_int(row.correct_first),
+        "correct_second": _safe_int(row.correct_second),
+        "correct_after_cue": _safe_int(row.correct_after_cue),
+        "total_attempts": total_attempts,
+        "avg_attempts": round(avg_attempts, 2),
+        "times_cue_shown": times_cue_shown,
+        "cue_rate": round(cue_rate, 4),
+        "first_try_rate": round(first_try_rate, 4),
+        "success_rate": round(success_rate, 4),
+        "avg_sentence_accuracy": round(sentence_accuracy, 4) if sentence_accuracy is not None else None,
+        "last_result": row.last_result,
+        "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
+    }
+
+
+async def _get_item_analytics_for_user(user: User) -> dict:
+    rows = await UserItemPerformance.filter(user=user).all()
+
+    all_rows = [_build_item_metric_row(r) for r in rows]
+
+    hardest_items = sorted(
+        all_rows,
+        key=lambda x: (-x["times_incorrect"], -x["avg_attempts"], x["first_try_rate"]),
+    )[:10]
+
+    most_retried_items = sorted(
+        all_rows,
+        key=lambda x: (-x["avg_attempts"], -x["times_seen"], -x["times_incorrect"]),
+    )[:10]
+
+    most_cue_dependent_items = sorted(
+        [r for r in all_rows if r["technique_id"] in {"image_naming", "naming_with_cues"}],
+        key=lambda x: (-x["cue_rate"], -x["times_cue_shown"], x["first_try_rate"]),
+    )[:10]
+
+    weakest_sentence_items = sorted(
+        [r for r in all_rows if r["technique_id"] == "sentence_repetition" and r["avg_sentence_accuracy"] is not None],
+        key=lambda x: (x["avg_sentence_accuracy"], -x["times_seen"]),
+    )[:10]
+
+    by_technique: dict[str, dict] = {}
+    for technique_id in SUPPORTED_TECHNIQUE_IDS:
+        technique_rows = [r for r in all_rows if r["technique_id"] == technique_id]
+
+        by_technique[technique_id] = {
+            "hardest_items": sorted(
+                technique_rows,
+                key=lambda x: (-x["times_incorrect"], -x["avg_attempts"], x["first_try_rate"]),
+            )[:5],
+            "most_retried_items": sorted(
+                technique_rows,
+                key=lambda x: (-x["avg_attempts"], -x["times_seen"]),
+            )[:5],
+            "most_cue_dependent_items": sorted(
+                technique_rows,
+                key=lambda x: (-x["cue_rate"], -x["times_cue_shown"]),
+            )[:5],
+            "weakest_sentence_items": sorted(
+                [r for r in technique_rows if r["avg_sentence_accuracy"] is not None],
+                key=lambda x: (x["avg_sentence_accuracy"], -x["times_seen"]),
+            )[:5],
+        }
+
+    return {
+        "hardest_items": hardest_items,
+        "most_retried_items": most_retried_items,
+        "most_cue_dependent_items": most_cue_dependent_items,
+        "weakest_sentence_items": weakest_sentence_items,
+        "by_technique": by_technique,
+    }
+
+
 # =========================================================
 # User endpoints
 # =========================================================
@@ -533,9 +747,7 @@ async def generate_personalised_pack(
     user = await get_or_create_user(clerk_user_id)
     prof = await get_or_create_profile(user)
 
-    technique_id = (payload.technique_id or "").strip()
-    if not technique_id:
-        raise HTTPException(status_code=400, detail="technique_id is required")
+    technique_id = _validate_technique_id(payload.technique_id)
 
     n_items = int(payload.n_items or 10)
     n_items = max(1, min(25, n_items))
@@ -562,6 +774,7 @@ async def generate_personalised_pack(
     if existing:
         existing.difficulty = int(pack.get("difficulty") or profile_dict["difficulty"])
         existing.pack_json = pack
+        existing.active = True
         await existing.save()
     else:
         await UserContentPack.create(
@@ -569,6 +782,7 @@ async def generate_personalised_pack(
             technique_id=technique_id,
             difficulty=int(pack.get("difficulty") or profile_dict["difficulty"]),
             pack_json=pack,
+            active=True,
         )
 
     return ContentPackOut(
@@ -585,13 +799,13 @@ async def get_active_pack(
     technique_id: str,
     clerk_user_id: str = Depends(require_clerk_user_id),
 ):
-    technique_id = (technique_id or "").strip()
-    if technique_id not in ("image_naming", "sentence_repetition"):
-        raise HTTPException(status_code=400, detail="Unknown technique_id")
-
+    technique_id = _validate_technique_id(technique_id)
     user = await get_or_create_user(clerk_user_id)
 
-    row = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
+    row = await UserContentPack.get_or_none(user=user, technique_id=technique_id, active=True)
+    if not row or not row.pack_json:
+        row = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
+
     if not row or not row.pack_json:
         return ContentPackOut(
             technique_id=technique_id,
@@ -636,6 +850,7 @@ class ScorePayload(BaseModel):
 @app.post("/api/score")
 async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(require_clerk_user_id)):
     user = await get_or_create_user(clerk_user_id)
+    technique_id = _validate_technique_id(payload.technique_id)
 
     today = date.today().isoformat()
     yesterday = (date.today() - timedelta(days=1)).isoformat()
@@ -664,11 +879,11 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     user.best_daily_score = max(_safe_int(user.best_daily_score), _safe_int(daily.points))
     await user.save()
 
-    stats = await UserTechniqueStats.get_or_none(user=user, technique_id=payload.technique_id)
+    stats = await UserTechniqueStats.get_or_none(user=user, technique_id=technique_id)
     if not stats:
         stats = await UserTechniqueStats.create(
             user=user,
-            technique_id=payload.technique_id,
+            technique_id=technique_id,
             total_exp=0,
             best_score=0,
             attempts=0,
@@ -688,13 +903,13 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
 
     daily_tech = await UserDailyTechniqueStats.get_or_none(
         user=user,
-        technique_id=payload.technique_id,
+        technique_id=technique_id,
         day=today,
     )
     if not daily_tech:
         daily_tech = await UserDailyTechniqueStats.create(
             user=user,
-            technique_id=payload.technique_id,
+            technique_id=technique_id,
             day=today,
             points=0,
             sessions_played=0,
@@ -750,7 +965,13 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
                 stats.incorrect += 1
                 daily_tech.incorrect += 1
 
-        if payload.technique_id == "sentence_repetition":
+            await _update_item_performance(
+                user=user,
+                technique_id=technique_id,
+                score_item=it,
+            )
+
+        if technique_id == "sentence_repetition":
             sentence_accuracies = [
                 float(it.sentence_accuracy)
                 for it in items
@@ -782,6 +1003,8 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
         stats.total_sentence_accuracy / stats.sentence_items_evaluated
         if stats.sentence_items_evaluated > 0 else 0.0
     )
+
+    item_analytics = await _get_item_analytics_for_user(user)
 
     return {
         "global": {
@@ -832,6 +1055,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
             "session_avg_sentence_accuracy": round(session_avg_sentence_accuracy, 4)
             if session_avg_sentence_accuracy is not None else None,
         },
+        "item_analytics": item_analytics,
     }
 
 
@@ -1040,9 +1264,6 @@ async def sentence_eval(
         provided_content = parse_csv_list(required_content)
         provided_function = parse_csv_list(required_function)
 
-        # =====================================================
-        # Exact match shortcut
-        # =====================================================
         if transcript_norm == target_norm and transcript_norm:
             return {
                 "text": text,
@@ -1122,6 +1343,7 @@ async def sentence_eval(
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
+
 # =========================================================
 # Optional speech feedback
 # =========================================================
@@ -1200,6 +1422,11 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
             if row.total_items > 0 else 0.0
         )
 
+        cue_usage_rate = (
+            row.correct_after_cue / row.total_items
+            if row.total_items > 0 else 0.0
+        )
+
         techniques[row.technique_id] = {
             "technique_id": row.technique_id,
             "total_exp": row.total_exp,
@@ -1220,6 +1447,7 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
             "lifetime_avg_sentence_accuracy": round(lifetime_avg_sentence_accuracy, 4),
             "avg_attempts_per_item": round(avg_attempts_per_item, 2),
             "first_try_accuracy": round(first_try_accuracy, 4),
+            "cue_usage_rate": round(cue_usage_rate, 4),
         }
 
     daily_tech_rows = await UserDailyTechniqueStats.filter(user=user, day__in=days).all()
@@ -1229,9 +1457,8 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
         by_technique_day[(row.technique_id, row.day)] = row
 
     technique_history = {}
-    technique_ids = {"image_naming", "sentence_repetition"}
 
-    for technique_id in technique_ids:
+    for technique_id in sorted(SUPPORTED_TECHNIQUE_IDS):
         series = []
 
         for d in days:
@@ -1242,6 +1469,7 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
             total_items = row.total_items if row else 0
             total_attempts = row.total_attempts if row else 0
             correct_first = row.correct_first if row else 0
+            correct_after_cue = row.correct_after_cue if row else 0
             total_sentence_accuracy = row.total_sentence_accuracy if row else 0.0
             sentence_items_evaluated = row.sentence_items_evaluated if row else 0
 
@@ -1250,6 +1478,9 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
             )
             avg_attempts_per_item = (
                 total_attempts / total_items if total_items > 0 else 0.0
+            )
+            cue_usage_rate = (
+                correct_after_cue / total_items if total_items > 0 else 0.0
             )
             sentence_accuracy = (
                 total_sentence_accuracy / sentence_items_evaluated
@@ -1262,16 +1493,20 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
                 "sessions": sessions_played,
                 "first_try_accuracy": round(first_try_accuracy, 4),
                 "avg_attempts_per_item": round(avg_attempts_per_item, 2),
+                "cue_usage_rate": round(cue_usage_rate, 4),
                 "sentence_accuracy": round(sentence_accuracy, 4),
                 "total_items": total_items,
             })
 
         technique_history[technique_id] = series
 
+    item_analytics = await _get_item_analytics_for_user(user)
+
     return {
         "daily_points": daily_points,
         "techniques": techniques,
         "technique_history": technique_history,
+        "item_analytics": item_analytics,
     }
 
 
@@ -1280,6 +1515,7 @@ async def get_technique_stats(
     technique_id: str,
     clerk_user_id: str = Depends(require_clerk_user_id),
 ):
+    technique_id = _validate_technique_id(technique_id)
     user = await get_or_create_user(clerk_user_id)
     stats = await UserTechniqueStats.get_or_none(user=user, technique_id=technique_id)
 
@@ -1302,11 +1538,28 @@ async def get_technique_stats(
             "sentence_items_evaluated": 0,
             "best_sentence_accuracy": 0.0,
             "lifetime_avg_sentence_accuracy": 0.0,
+            "item_analytics": {
+                "hardest_items": [],
+                "most_retried_items": [],
+                "most_cue_dependent_items": [],
+                "weakest_sentence_items": [],
+            },
         }
 
     lifetime_avg_sentence_accuracy = (
         stats.total_sentence_accuracy / stats.sentence_items_evaluated
         if stats.sentence_items_evaluated > 0 else 0.0
+    )
+
+    user_item_analytics = await _get_item_analytics_for_user(user)
+    technique_item_analytics = user_item_analytics["by_technique"].get(
+        technique_id,
+        {
+            "hardest_items": [],
+            "most_retried_items": [],
+            "most_cue_dependent_items": [],
+            "weakest_sentence_items": [],
+        },
     )
 
     return {
@@ -1327,6 +1580,7 @@ async def get_technique_stats(
         "sentence_items_evaluated": stats.sentence_items_evaluated,
         "best_sentence_accuracy": stats.best_sentence_accuracy,
         "lifetime_avg_sentence_accuracy": round(lifetime_avg_sentence_accuracy, 4),
+        "item_analytics": technique_item_analytics,
     }
 
 
