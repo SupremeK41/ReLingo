@@ -11,6 +11,7 @@ import Progress from "./components/Progress";
 import SentenceRepetition from "./components/SentenceRepetition";
 import Personalisation from "./components/Personalisation";
 import NamingWithCues from "./components/NamingWithCues";
+import SemanticFeatureAnalysis from "./components/SemanticFeatureAnalysis";
 
 
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
@@ -88,6 +89,7 @@ function App() {
         <Route path="/progress" element={<Progress />} />
         <Route path="/personalisation" element={<Personalisation />} />
         <Route path="/naming-with-cues" element={<NamingWithCues />} />
+        <Route path="/semantic-feature-analysis" element={<SemanticFeatureAnalysis />} />
       </Routes>
     </div>
   );

@@ -1,4 +1,3 @@
-# backend/local_image_generation.py
 import json
 import os
 import time
@@ -19,7 +18,7 @@ DEFAULT_WORKFLOW_PATH = os.getenv(
     str(BACKEND_DIR / "comfyui_workflow_api.json"),
 )
 
-# These must match your exported API workflow JSON
+# These should match the node ids in the exported ComfyUI API workflow
 DEFAULT_PROMPT_NODE_ID = os.getenv("COMFYUI_PROMPT_NODE_ID", "87")
 DEFAULT_SAVE_NODE_ID = os.getenv("COMFYUI_SAVE_NODE_ID", "92")
 
@@ -47,56 +46,57 @@ def _http_json(
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
 
-    req = urllib.request.Request(url=url, data=data, headers=headers, method=method)
+    request = urllib.request.Request(url=url, data=data, headers=headers, method=method)
 
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            raw = resp.read().decode("utf-8")
+        with urllib.request.urlopen(request, timeout=60) as response:
+            raw = response.read().decode("utf-8")
             return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="ignore")
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="ignore")
         raise LocalImageGenerationError(
-            f"ComfyUI HTTP {e.code} on {url}: {body}"
-        ) from e
-    except urllib.error.URLError as e:
+            f"ComfyUI HTTP {error.code} on {url}: {body}"
+        ) from error
+    except urllib.error.URLError as error:
         raise LocalImageGenerationError(
-            f"Could not reach ComfyUI at {url}: {e}"
-        ) from e
+            f"Could not reach ComfyUI at {url}: {error}"
+        ) from error
 
 
 def _http_bytes(url: str) -> bytes:
-    req = urllib.request.Request(url=url, method="GET")
+    request = urllib.request.Request(url=url, method="GET")
+
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            return resp.read()
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="ignore")
+        with urllib.request.urlopen(request, timeout=120) as response:
+            return response.read()
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="ignore")
         raise LocalImageGenerationError(
-            f"ComfyUI HTTP {e.code} when downloading image from {url}: {body}"
-        ) from e
-    except urllib.error.URLError as e:
+            f"ComfyUI HTTP {error.code} when downloading image from {url}: {body}"
+        ) from error
+    except urllib.error.URLError as error:
         raise LocalImageGenerationError(
-            f"Could not download image from ComfyUI at {url}: {e}"
-        ) from e
+            f"Could not download image from ComfyUI at {url}: {error}"
+        ) from error
 
 
 def _load_workflow_template(workflow_path: str | Path | None = None) -> dict[str, Any]:
-    wf_path = Path(workflow_path or DEFAULT_WORKFLOW_PATH)
-    _log("Loading workflow from:", wf_path)
+    workflow_file = Path(workflow_path or DEFAULT_WORKFLOW_PATH)
+    _log("Loading workflow from:", workflow_file)
 
-    if not wf_path.exists():
+    if not workflow_file.exists():
         raise LocalImageGenerationError(
-            f"ComfyUI workflow file not found: {wf_path}"
+            f"ComfyUI workflow file not found: {workflow_file}"
         )
 
     try:
-        workflow = json.loads(wf_path.read_text(encoding="utf-8"))
+        workflow = json.loads(workflow_file.read_text(encoding="utf-8"))
         _log("Workflow loaded successfully.")
         return workflow
-    except Exception as e:
+    except Exception as error:
         raise LocalImageGenerationError(
-            f"Failed to parse ComfyUI workflow JSON: {wf_path}"
-        ) from e
+            f"Failed to parse ComfyUI workflow JSON: {workflow_file}"
+        ) from error
 
 
 def _set_node_text_input(
@@ -114,7 +114,10 @@ def _set_node_text_input(
         raise LocalImageGenerationError(f"Workflow node '{node_id}' has no inputs")
 
     inputs[field_name] = value
-    _log(f"Set node {node_id}.{field_name} =", value[:160] + ("..." if len(value) > 160 else ""))
+    _log(
+        f"Set node {node_id}.{field_name} =",
+        value[:160] + ("..." if len(value) > 160 else ""),
+    )
 
 
 def _set_save_prefix(
@@ -159,7 +162,7 @@ def _get_history_item(prompt_id: str, base_url: str) -> dict[str, Any] | None:
 
 def _extract_output_image_record(history_item: dict[str, Any]) -> dict[str, Any] | None:
     """
-    Returns the first image record from history, e.g.:
+    Returns the first image record found in the ComfyUI history output, for example:
     {
       "filename": "...png",
       "subfolder": "...",
@@ -178,10 +181,10 @@ def _extract_output_image_record(history_item: dict[str, Any]) -> dict[str, Any]
         if not isinstance(images, list):
             continue
 
-        for img in images:
-            if isinstance(img, dict) and img.get("filename"):
-                _log(f"Found output image on node {node_id}:", img)
-                return img
+        for image in images:
+            if isinstance(image, dict) and image.get("filename"):
+                _log(f"Found output image on node {node_id}:", image)
+                return image
 
     return None
 
@@ -198,9 +201,9 @@ def _build_view_url(base_url: str, image_record: dict[str, Any]) -> str:
 
 
 def _normalise_relative_public_path(path_str: str) -> str:
-    rel = str(path_str).replace("\\", "/").lstrip("/")
-    rel = rel.replace("../", "").replace("..\\", "")
-    return rel
+    rel_path = str(path_str).replace("\\", "/").lstrip("/")
+    rel_path = rel_path.replace("../", "").replace("..\\", "")
+    return rel_path
 
 
 def _derive_output_relpath(
@@ -208,9 +211,10 @@ def _derive_output_relpath(
     image_record: dict[str, Any],
 ) -> str:
     """
-    We do NOT rely on ComfyUI saving directly into frontend/public.
-    Instead, we download the generated image from ComfyUI and write it ourselves
-    into frontend/public/<save_prefix>.<ext>
+    This does not rely on ComfyUI writing directly into frontend/public.
+
+    Instead, the image is downloaded from ComfyUI and then written into:
+    frontend/public/<save_prefix>.<ext>
     """
     rel_prefix = _normalise_relative_public_path(save_prefix)
     filename = str(image_record.get("filename", "") or "").strip()
@@ -244,8 +248,8 @@ def generate_image_via_comfyui(
     poll_interval_seconds: float | None = None,
 ) -> str:
     """
-    Returns a frontend relative path like:
-      generated/image_naming/foo_abcd1234.png
+    Returns a frontend-relative path like:
+    generated/image_naming/foo_abcd1234.png
     """
     _log("Starting local generation...")
     _log("Technique:", technique_id)
@@ -293,6 +297,7 @@ def generate_image_via_comfyui(
         if history_item:
             _log("History item found for prompt.")
             image_record = _extract_output_image_record(history_item)
+
             if image_record:
                 view_url = _build_view_url(base_url, image_record)
                 _log("Downloading image bytes...")
@@ -306,8 +311,8 @@ def generate_image_via_comfyui(
                 _write_public_file(rel_path, image_bytes)
                 _log("Local generation complete. Returning:", rel_path)
                 return rel_path
-            else:
-                _log("History exists but no output image record yet.")
+
+            _log("History exists but no output image record yet.")
         else:
             _log("No history item yet.")
 

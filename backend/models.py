@@ -1,5 +1,5 @@
-from tortoise.models import Model
 from tortoise import fields
+from tortoise.models import Model
 
 
 class User(Model):
@@ -8,10 +8,10 @@ class User(Model):
     clerk_user_id = fields.CharField(max_length=255, unique=True)
     email = fields.CharField(max_length=255, null=True)
 
-    # Global points/EXP
+    # Overall EXP across the app
     total_exp = fields.IntField(default=0)
 
-    # TRUE best daily total (max of UserDailyStats.points)
+    # Highest total points reached in a single day
     best_daily_score = fields.IntField(default=0)
 
     streak = fields.IntField(default=0)
@@ -22,7 +22,7 @@ class User(Model):
 
 class UserDailyStats(Model):
     """
-    Per-day overall rollups so best_daily_score is meaningful.
+    Per-day overall totals so daily progress and best daily score can be tracked properly.
     """
     id = fields.IntField(pk=True)
 
@@ -32,7 +32,8 @@ class UserDailyStats(Model):
         on_delete=fields.CASCADE,
     )
 
-    day = fields.CharField(max_length=20)  # ISO date yyyy-mm-dd
+    # ISO date string: yyyy-mm-dd
+    day = fields.CharField(max_length=20)
 
     points = fields.IntField(default=0)
     sessions_played = fields.IntField(default=0)
@@ -45,12 +46,12 @@ class UserDailyStats(Model):
 
 class UserTechniqueStats(Model):
     """
-    Lifetime per-technique aggregates.
+    Lifetime stats for each technique.
 
-    Legacy fields kept so older frontend won't break:
-      - total_exp mirrors total_points
-      - best_score mirrors best_session_points
-      - attempts mirrors sessions_played
+    Some older fields are still kept so the frontend stays compatible:
+    - total_exp mirrors total_points
+    - best_score mirrors best_session_points
+    - attempts mirrors sessions_played
     """
     id = fields.IntField(pk=True)
 
@@ -61,12 +62,12 @@ class UserTechniqueStats(Model):
         on_delete=fields.CASCADE,
     )
 
-    # ---- legacy ----
+    # Legacy fields
     total_exp = fields.IntField(default=0)
     best_score = fields.IntField(default=0)
     attempts = fields.IntField(default=0)
 
-    # ---- lifetime rollups ----
+    # Lifetime totals
     total_points = fields.IntField(default=0)
     best_session_points = fields.IntField(default=0)
     sessions_played = fields.IntField(default=0)
@@ -79,7 +80,7 @@ class UserTechniqueStats(Model):
     correct_after_cue = fields.IntField(default=0)
     incorrect = fields.IntField(default=0)
 
-    # Sentence repetition metric (lifetime)
+    # Sentence repetition metrics
     total_sentence_accuracy = fields.FloatField(default=0.0)
     sentence_items_evaluated = fields.IntField(default=0)
     best_sentence_accuracy = fields.FloatField(default=0.0)
@@ -92,7 +93,8 @@ class UserTechniqueStats(Model):
 
 class UserDailyTechniqueStats(Model):
     """
-    Per-day, per-technique history for graphs and progress tracking.
+    Per-day stats for each technique.
+    Used for graphs, streak-style summaries, and progress trends.
     """
     id = fields.IntField(pk=True)
 
@@ -124,10 +126,16 @@ class UserDailyTechniqueStats(Model):
     class Meta:
         unique_together = (("user", "technique_id", "day"),)
 
+
 class UserItemPerformance(Model):
     """
-    Per-user, per-technique, per-item lifetime tracking.
-    This is the key table for identifying difficult words/images/sentences.
+    Lifetime item-level tracking for each user and technique.
+
+    This is the main table used for analytics like:
+    - hardest items
+    - most retried items
+    - cue dependence
+    - weaker sentence targets
     """
     id = fields.IntField(pk=True)
 
@@ -139,21 +147,21 @@ class UserItemPerformance(Model):
 
     technique_id = fields.CharField(max_length=50)
 
-    # Stable identifier for the therapy target
+    # Stable identifier for the therapy item
     item_key = fields.CharField(max_length=255)
 
-    # Human-readable label shown in analytics
+    # Human-readable label for dashboards and summaries
     item_label = fields.CharField(max_length=255)
 
-    # Optional image path for image-based techniques
+    # Optional image path for image-based tasks
     image = fields.CharField(max_length=255, null=True)
 
-    # Core usage counts
+    # Core usage totals
     times_seen = fields.IntField(default=0)
     times_correct = fields.IntField(default=0)
     times_incorrect = fields.IntField(default=0)
 
-    # Attempt quality
+    # Performance by attempt quality
     correct_first = fields.IntField(default=0)
     correct_second = fields.IntField(default=0)
     correct_after_cue = fields.IntField(default=0)
@@ -161,15 +169,15 @@ class UserItemPerformance(Model):
     total_attempts = fields.IntField(default=0)
     total_points = fields.IntField(default=0)
 
-    # Cue reliance
+    # Cue usage tracking
     times_cue_shown = fields.IntField(default=0)
 
     # Sentence-specific tracking
     total_sentence_accuracy = fields.FloatField(default=0.0)
     sentence_attempts = fields.IntField(default=0)
 
-    # Recency
-    last_result = fields.CharField(max_length=20, null=True)   # "correct" / "incorrect"
+    # Most recent result
+    last_result = fields.CharField(max_length=20, null=True)  # "correct" or "incorrect"
     last_seen_at = fields.DatetimeField(auto_now=True)
 
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -178,14 +186,15 @@ class UserItemPerformance(Model):
         unique_together = (("user", "technique_id", "item_key"),)
         indexes = (("user_id", "technique_id"), ("item_key",))
 
-# ---------------------------
-# Personalisation models
-# ---------------------------
+
+# =========================================================
+# Personalisation
+# =========================================================
 
 class UserProfile(Model):
     """
-    Stores user preferences for LLM personalisation.
-    One row per user.
+    Stores the user’s personalisation settings.
+    One profile row per user.
     """
     id = fields.IntField(pk=True)
 
@@ -198,15 +207,15 @@ class UserProfile(Model):
     interests_text = fields.TextField(default="")
     avoid_topics_text = fields.TextField(null=True)
 
-    # 1=easy 2=medium 3=hard
+    # 1 = easy, 2 = medium, 3 = hard
     difficulty = fields.IntField(default=1)
 
-    # 1=short 2=medium 3=long
+    # 1 = short, 2 = medium, 3 = long
     sentence_length = fields.IntField(default=1)
 
     cue_enabled = fields.BooleanField(default=True)
 
-    # Whether any generation beyond curated images is allowed
+    # Controls whether anything beyond curated images can be used
     allow_generated_images = fields.BooleanField(default=False)
 
     # "none" | "openai" | "local"
@@ -217,10 +226,10 @@ class UserProfile(Model):
 
 class UserContentPack(Model):
     """
-    Stores personalised content packs per technique.
+    Stores generated content packs for each technique.
 
-    For MVP you can keep ONE active pack per user+technique.
-    Later you can keep history by setting older packs active=False.
+    Right now the app keeps one active pack per user and technique.
+    If needed later, older packs can be kept by marking them inactive.
     """
     id = fields.IntField(pk=True)
 
@@ -234,7 +243,6 @@ class UserContentPack(Model):
     difficulty = fields.IntField(default=1)
 
     pack_json = fields.JSONField()
-
     active = fields.BooleanField(default=True)
 
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -246,7 +254,7 @@ class UserContentPack(Model):
 
 class ImageAsset(Model):
     """
-    Optional now; prepares for caching generated images later.
+    Stores image metadata so generated images can be reused instead of regenerated.
     """
     id = fields.UUIDField(pk=True)
 
@@ -264,7 +272,6 @@ class ImageAsset(Model):
     difficulty = fields.IntField(default=1)
 
     file_path = fields.CharField(max_length=255)
-
     prompt_hash = fields.CharField(max_length=128, null=True)
 
     created_at = fields.DatetimeField(auto_now_add=True)

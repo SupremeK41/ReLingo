@@ -9,6 +9,7 @@ const TECHNIQUES = [
   { id: "image_naming", label: "Image Naming" },
   { id: "naming_with_cues", label: "Naming with Cues" },
   { id: "sentence_repetition", label: "Sentence Repetition" },
+  { id: "semantic_feature_analysis", label: "Semantic Feature Analysis" },
 ];
 
 const IMAGE_GENERATION_OPTIONS = [

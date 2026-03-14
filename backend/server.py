@@ -1,12 +1,15 @@
+import json
 import os
 import re
 import shutil
+import urllib.error
+import urllib.request
 import uuid
-from datetime import date, timedelta, datetime
+from datetime import date, datetime, timedelta
 
 import whisper
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from metaphone import doublemetaphone
 from openai import OpenAI
@@ -16,19 +19,19 @@ from tortoise.contrib.fastapi import register_tortoise
 from auth_clerk import require_clerk_user_id
 from models import (
     User,
-    UserTechniqueStats,
+    UserContentPack,
     UserDailyStats,
     UserDailyTechniqueStats,
-    UserProfile,
-    UserContentPack,
     UserItemPerformance,
+    UserProfile,
+    UserTechniqueStats,
 )
-from schemas import UserOut, UserProfileIn, UserProfileOut, ContentPackOut
 from personalisation import build_content_pack
+from schemas import ContentPackOut, UserOut, UserProfileIn, UserProfileOut
 
 
 # =========================================================
-# App / env setup
+# App setup
 # =========================================================
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
@@ -67,6 +70,7 @@ SUPPORTED_TECHNIQUE_IDS = {
     "image_naming",
     "naming_with_cues",
     "sentence_repetition",
+    "semantic_feature_analysis",
 }
 
 DEFAULT_FUNCTION_WORDS = {
@@ -87,38 +91,38 @@ DEFAULT_FUNCTION_WORDS = {
 
 
 # =========================================================
-# Normalisation helpers
+# Text normalisation helpers
 # =========================================================
 
-def normalize_text(s: str | None) -> str:
-    s = (s or "").lower()
-    s = re.sub(r"[^\w\s]", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+def normalize_text(text: str | None) -> str:
+    text = (text or "").lower()
+    text = re.sub(r"[^\w\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
-def normalize_word(s: str | None) -> str:
-    return normalize_text(s)
+def normalize_word(text: str | None) -> str:
+    return normalize_text(text)
 
 
-def singularize_simple(w: str) -> str:
-    w = normalize_word(w)
+def singularize_simple(word: str) -> str:
+    word = normalize_word(word)
 
-    if w.endswith("ies") and len(w) > 3:
-        return w[:-3] + "y"
-    if w.endswith("es") and len(w) > 3:
-        return w[:-2]
-    if w.endswith("s") and len(w) > 2:
-        return w[:-1]
-    return w
-
-
-def normalize_token_for_match(w: str | None) -> str:
-    return singularize_simple(normalize_word(w))
+    if word.endswith("ies") and len(word) > 3:
+        return word[:-3] + "y"
+    if word.endswith("es") and len(word) > 3:
+        return word[:-2]
+    if word.endswith("s") and len(word) > 2:
+        return word[:-1]
+    return word
 
 
-def tokenize(s: str | None) -> list[str]:
-    norm = normalize_text(s)
+def normalize_token_for_match(word: str | None) -> str:
+    return singularize_simple(normalize_word(word))
+
+
+def tokenize(text: str | None) -> list[str]:
+    norm = normalize_text(text)
     return norm.split() if norm else []
 
 
@@ -146,25 +150,25 @@ def derive_targets_from_sentence(sentence: str) -> tuple[list[str], list[str]]:
     seen_content: set[str] = set()
     seen_function: set[str] = set()
 
-    for tok in tokens:
-        norm_tok = normalize_word(tok)
-        if not norm_tok:
+    for token in tokens:
+        norm_token = normalize_word(token)
+        if not norm_token:
             continue
 
-        if norm_tok in DEFAULT_FUNCTION_WORDS:
-            if norm_tok not in seen_function:
-                seen_function.add(norm_tok)
-                function.append(norm_tok)
+        if norm_token in DEFAULT_FUNCTION_WORDS:
+            if norm_token not in seen_function:
+                seen_function.add(norm_token)
+                function.append(norm_token)
         else:
-            if norm_tok not in seen_content:
-                seen_content.add(norm_tok)
-                content.append(norm_tok)
+            if norm_token not in seen_content:
+                seen_content.add(norm_token)
+                content.append(norm_token)
 
     return content, function
 
 
 # =========================================================
-# Distance / phonetics
+# Matching, distance and phonetics
 # =========================================================
 
 def levenshtein(a: str, b: str) -> int:
@@ -176,14 +180,15 @@ def levenshtein(a: str, b: str) -> int:
         return len(a)
 
     prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, start=1):
+    for i, char_a in enumerate(a, start=1):
         cur = [i]
-        for j, cb in enumerate(b, start=1):
-            ins = cur[j - 1] + 1
-            dele = prev[j] + 1
-            sub = prev[j - 1] + (0 if ca == cb else 1)
-            cur.append(min(ins, dele, sub))
+        for j, char_b in enumerate(b, start=1):
+            insert_cost = cur[j - 1] + 1
+            delete_cost = prev[j] + 1
+            substitute_cost = prev[j - 1] + (0 if char_a == char_b else 1)
+            cur.append(min(insert_cost, delete_cost, substitute_cost))
         prev = cur
+
     return prev[-1]
 
 
@@ -197,39 +202,43 @@ def allowed_distance(max_len: int) -> int:
     return 4
 
 
-def phonetic_codes(w: str) -> set[str]:
-    a, b = doublemetaphone(w)
-    return {c for c in (a, b) if c}
+def phonetic_codes(word: str) -> set[str]:
+    a, b = doublemetaphone(word)
+    return {code for code in (a, b) if code}
 
 
 def is_match_phonetic(word: str, target: str) -> tuple[bool, int, float, bool]:
-    w = normalize_token_for_match(word)
-    t = normalize_token_for_match(target)
+    spoken = normalize_token_for_match(word)
+    expected = normalize_token_for_match(target)
 
-    if not w or not t:
-        return (False, 999, 1.0, False)
+    if not spoken or not expected:
+        return False, 999, 1.0, False
 
-    if w == t:
-        return (True, 0, 0.0, True)
+    if spoken == expected:
+        return True, 0, 0.0, True
 
-    dist = levenshtein(w, t)
-    max_len = max(len(w), len(t))
+    dist = levenshtein(spoken, expected)
+    max_len = max(len(spoken), len(expected))
     rel = dist / max_len if max_len else 1.0
 
     if dist <= allowed_distance(max_len) or rel <= 0.25:
-        return (True, dist, rel, False)
+        return True, dist, rel, False
 
-    pw = phonetic_codes(w)
-    pt = phonetic_codes(t)
-    phonetic_match = bool(pw & pt)
+    spoken_codes = phonetic_codes(spoken)
+    expected_codes = phonetic_codes(expected)
+    phonetic_match = bool(spoken_codes & expected_codes)
 
     if phonetic_match:
-        return (True, dist, rel, True)
+        return True, dist, rel, True
 
-    return (False, dist, rel, False)
+    return False, dist, rel, False
 
 
-def token_matches_target(spoken_token: str, target_token: str, allow_phonetic: bool = True) -> bool:
+def token_matches_target(
+    spoken_token: str,
+    target_token: str,
+    allow_phonetic: bool = True,
+) -> bool:
     spoken_token = normalize_word(spoken_token)
     target_token = normalize_word(target_token)
 
@@ -260,31 +269,31 @@ def build_phrase_candidates(transcript_norm: str, target_text: str) -> list[str]
     out: list[str] = []
     seen: set[str] = set()
 
-    def add_candidate(x: str) -> None:
-        x = normalize_text(x)
-        if x and x not in seen:
-            seen.add(x)
-            out.append(x)
+    def add_candidate(value: str) -> None:
+        value = normalize_text(value)
+        if value and value not in seen:
+            seen.add(value)
+            out.append(value)
 
     add_candidate(transcript_norm)
 
     transcript_tokens = transcript_norm.split()
     target_tokens = normalize_text(target_text).split() if target_text else []
 
-    for tok in transcript_tokens:
-        add_candidate(tok)
+    for token in transcript_tokens:
+        add_candidate(token)
 
     if target_tokens:
-        n = len(target_tokens)
+        target_len = len(target_tokens)
 
-        for i in range(len(transcript_tokens) - n + 1):
-            add_candidate(" ".join(transcript_tokens[i:i + n]))
+        for i in range(len(transcript_tokens) - target_len + 1):
+            add_candidate(" ".join(transcript_tokens[i:i + target_len]))
 
-        for extra_n in {max(1, n - 1), n + 1}:
-            if extra_n <= 0:
+        for alt_len in {max(1, target_len - 1), target_len + 1}:
+            if alt_len <= 0:
                 continue
-            for i in range(len(transcript_tokens) - extra_n + 1):
-                add_candidate(" ".join(transcript_tokens[i:i + extra_n]))
+            for i in range(len(transcript_tokens) - alt_len + 1):
+                add_candidate(" ".join(transcript_tokens[i:i + alt_len]))
 
     return out
 
@@ -294,19 +303,19 @@ def best_phrase_match(spoken_text: str, target_text: str) -> tuple[bool, int, fl
     target_norm = normalize_text(target_text)
 
     if not spoken_norm or not target_norm:
-        return (False, 999, 1.0, False)
+        return False, 999, 1.0, False
 
     candidates = build_phrase_candidates(spoken_norm, target_norm)
 
     best = (False, 999, 1.0, False)
     best_tuple = (1, 1.0, 999)
 
-    for cand in candidates:
-        matched, dist, rel, phon = is_match_phonetic(cand, target_norm)
-        tup = (0 if matched else 1, rel, dist)
+    for candidate in candidates:
+        matched, dist, rel, phon = is_match_phonetic(candidate, target_norm)
+        score_tuple = (0 if matched else 1, rel, dist)
 
-        if tup < best_tuple:
-            best_tuple = tup
+        if score_tuple < best_tuple:
+            best_tuple = score_tuple
             best = (matched, dist, rel, phon)
 
     return best
@@ -326,8 +335,8 @@ def target_item_present(
 
     if len(target_parts) == 1:
         return any(
-            token_matches_target(tok, target_item, allow_phonetic=allow_phonetic)
-            for tok in transcript_tokens
+            token_matches_target(token, target_item, allow_phonetic=allow_phonetic)
+            for token in transcript_tokens
         )
 
     matched, _, rel, _ = best_phrase_match(transcript_norm, target_item)
@@ -373,9 +382,9 @@ def extract_max_no_speech_prob(result: dict) -> float:
 
     for seg in segments:
         try:
-            p = float(seg.get("no_speech_prob") or 0.0)
-            if p > max_no_speech_prob:
-                max_no_speech_prob = p
+            prob = float(seg.get("no_speech_prob") or 0.0)
+            if prob > max_no_speech_prob:
+                max_no_speech_prob = prob
         except Exception:
             pass
 
@@ -383,7 +392,292 @@ def extract_max_no_speech_prob(result: dict) -> float:
 
 
 # =========================================================
-# User/profile helpers
+# SFA evaluation helpers
+# =========================================================
+
+def _get_sfa_eval_provider() -> str:
+    provider = os.getenv("SFA_EVAL_PROVIDER", "local").strip().lower()
+    if provider not in {"local", "openai"}:
+        provider = "local"
+    return provider
+
+
+def _get_local_llm_model() -> str:
+    return os.getenv("LOCAL_LLM_MODEL", "gemma3:4b").strip() or "gemma3:4b"
+
+
+def _get_ollama_base_url() -> str:
+    return os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+
+
+def _extract_json(text: str) -> dict:
+    if not text:
+        raise ValueError("Empty model response")
+
+    text = text.strip()
+
+    if text.startswith("{") and text.endswith("}"):
+        return json.loads(text)
+
+    match = re.search(r"\{.*\}", text, flags=re.S)
+    if not match:
+        raise ValueError("No JSON object found in response")
+
+    return json.loads(match.group(0))
+
+
+def _ollama_chat_json(
+    model: str,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float = 0.2,
+) -> dict:
+    url = f"{_get_ollama_base_url()}/api/chat"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "stream": False,
+        "options": {
+            "temperature": temperature,
+        },
+    }
+
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            raw = response.read().decode("utf-8")
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Ollama HTTP error {error.code}: {body}") from error
+    except urllib.error.URLError as error:
+        raise RuntimeError(
+            f"Could not connect to Ollama at {_get_ollama_base_url()}. "
+            f"Make sure Ollama is running and the model is pulled. Original error: {error}"
+        ) from error
+
+    data = json.loads(raw)
+    message = data.get("message") or {}
+    content = (message.get("content") or "").strip()
+
+    if not content:
+        raise ValueError("Ollama returned empty content")
+
+    return _extract_json(content)
+
+
+def _build_sfa_eval_prompt(
+    transcript_text: str,
+    candidate_words: list[str],
+) -> tuple[str, str]:
+    candidate_preview = ", ".join(candidate_words[:50]) if candidate_words else "No candidate list provided"
+
+    system_prompt = """
+You are evaluating a semantic feature analysis speech therapy response.
+
+The user has described an item shown in an image.
+Your task is to infer the most likely target concept from the description.
+
+Return STRICT JSON ONLY in this exact shape:
+{
+  "best_guess": "string",
+  "reason": "short string",
+  "confidence": 0.0
+}
+
+Rules:
+- Guess a simple everyday noun phrase.
+- Use the user's spoken description as the main evidence.
+- Prefer one of the candidate words if the description clearly fits one.
+- Do not return markdown.
+- confidence must be a number from 0.0 to 1.0.
+""".strip()
+
+    user_prompt = f"""
+User spoken description:
+{transcript_text}
+
+Candidate target words:
+{candidate_preview}
+
+Return JSON only.
+""".strip()
+
+    return system_prompt, user_prompt
+
+
+def _guess_sfa_target_with_openai(
+    transcript_text: str,
+    candidate_words: list[str],
+) -> dict:
+    system_prompt, user_prompt = _build_sfa_eval_prompt(
+        transcript_text=transcript_text,
+        candidate_words=candidate_words,
+    )
+
+    response = client.chat.completions.create(
+        model=os.getenv("OPENAI_TEXT_MODEL", "gpt-4o-mini"),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.2,
+    )
+
+    content = (response.choices[0].message.content or "").strip()
+    return _extract_json(content)
+
+
+def _guess_sfa_target_with_local_llm(
+    transcript_text: str,
+    candidate_words: list[str],
+) -> dict:
+    system_prompt, user_prompt = _build_sfa_eval_prompt(
+        transcript_text=transcript_text,
+        candidate_words=candidate_words,
+    )
+
+    return _ollama_chat_json(
+        model=_get_local_llm_model(),
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=0.2,
+    )
+
+
+def _safe_float(value, default=0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _evaluate_sfa_response(
+    transcript_text: str,
+    target_word: str,
+    candidate_words: list[str],
+) -> dict:
+    transcript_norm = normalize_text(transcript_text)
+    target_norm = normalize_text(target_word)
+    transcript_tokens = tokenize(transcript_norm)
+
+    if not transcript_norm or not target_norm:
+        return {
+            "matched": False,
+            "best_guess": None,
+            "distance": None,
+            "rel_distance": None,
+            "phonetic_used": None,
+            "confidence": 0.0,
+            "reason": "No usable transcript or target.",
+            "used_direct_match": False,
+            "used_llm_guess": False,
+        }
+
+    direct_matched, direct_dist, direct_rel, direct_phon = best_phrase_match(
+        transcript_norm,
+        target_norm,
+    )
+
+    if direct_matched or direct_rel <= 0.34:
+        return {
+            "matched": True,
+            "best_guess": target_word,
+            "distance": direct_dist,
+            "rel_distance": direct_rel,
+            "phonetic_used": direct_phon,
+            "confidence": 1.0,
+            "reason": "Target was identified directly from the spoken description.",
+            "used_direct_match": True,
+            "used_llm_guess": False,
+        }
+
+    guess_payload = None
+    used_provider = _get_sfa_eval_provider()
+
+    try:
+        if used_provider == "local":
+            guess_payload = _guess_sfa_target_with_local_llm(
+                transcript_text=transcript_text,
+                candidate_words=candidate_words,
+            )
+        else:
+            guess_payload = _guess_sfa_target_with_openai(
+                transcript_text=transcript_text,
+                candidate_words=candidate_words,
+            )
+    except Exception:
+        if used_provider == "local" and os.getenv("OPENAI_API_KEY"):
+            guess_payload = _guess_sfa_target_with_openai(
+                transcript_text=transcript_text,
+                candidate_words=candidate_words,
+            )
+
+    guessed_word = normalize_text((guess_payload or {}).get("best_guess"))
+    reason = str((guess_payload or {}).get("reason") or "").strip()
+    confidence = max(0.0, min(1.0, _safe_float((guess_payload or {}).get("confidence"), 0.0)))
+
+    if guessed_word:
+        guess_matched, guess_dist, guess_rel, guess_phon = best_phrase_match(
+            guessed_word,
+            target_norm,
+        )
+
+        if guess_matched or guess_rel <= 0.34:
+            return {
+                "matched": True,
+                "best_guess": guessed_word,
+                "distance": guess_dist,
+                "rel_distance": guess_rel,
+                "phonetic_used": guess_phon,
+                "confidence": confidence,
+                "reason": reason or "LLM guessed the target from the semantic description.",
+                "used_direct_match": False,
+                "used_llm_guess": True,
+            }
+
+        if target_item_present(
+            transcript_norm,
+            transcript_tokens,
+            guessed_word,
+            allow_phonetic=True,
+        ):
+            return {
+                "matched": False,
+                "best_guess": guessed_word,
+                "distance": guess_dist,
+                "rel_distance": guess_rel,
+                "phonetic_used": guess_phon,
+                "confidence": confidence,
+                "reason": reason or "LLM guessed a concept, but it did not match the target.",
+                "used_direct_match": False,
+                "used_llm_guess": True,
+            }
+
+    return {
+        "matched": False,
+        "best_guess": guessed_word or None,
+        "distance": None,
+        "rel_distance": None,
+        "phonetic_used": None,
+        "confidence": confidence,
+        "reason": reason or "Could not confidently match the description to the target.",
+        "used_direct_match": False,
+        "used_llm_guess": True,
+    }
+
+
+# =========================================================
+# User and profile helpers
 # =========================================================
 
 @app.get("/")
@@ -406,10 +700,10 @@ async def get_or_create_user(clerk_user_id: str) -> User:
 
 
 async def get_or_create_profile(user: User) -> UserProfile:
-    prof = await UserProfile.get_or_none(user_id=user.id)
-    if not prof:
-        prof = await UserProfile.create(user=user)
-    return prof
+    profile = await UserProfile.get_or_none(user_id=user.id)
+    if not profile:
+        profile = await UserProfile.create(user=user)
+    return profile
 
 
 def _now_iso() -> str:
@@ -426,9 +720,9 @@ def _pack_wrapper(technique_id: str, difficulty: int, items: list[dict]) -> dict
     }
 
 
-def _safe_int(x, default=0) -> int:
+def _safe_int(value, default=0) -> int:
     try:
-        return int(x)
+        return int(value)
     except Exception:
         return default
 
@@ -450,7 +744,11 @@ def _item_label_for_analytics(target: str) -> str:
     return target[:255] if target else "Unknown item"
 
 
-async def _get_item_image_from_active_pack(user: User, technique_id: str, target: str) -> str | None:
+async def _get_item_image_from_active_pack(
+    user: User,
+    technique_id: str,
+    target: str,
+) -> str | None:
     row = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
     if not row or not row.pack_json:
         return None
@@ -461,6 +759,7 @@ async def _get_item_image_from_active_pack(user: User, technique_id: str, target
     for item in items:
         item_word = normalize_text(item.get("word"))
         item_sentence = normalize_text(item.get("sentence"))
+
         if target_norm and (item_word == target_norm or item_sentence == target_norm):
             image = item.get("image")
             if image:
@@ -520,16 +819,17 @@ async def _update_item_performance(
     if bool(score_item.cueShown):
         perf.times_cue_shown += 1
 
-    pts = _safe_int(score_item.awardedPoints)
-    if pts == 3:
+    points = _safe_int(score_item.awardedPoints)
+
+    if points == 3:
         perf.times_correct += 1
         perf.correct_first += 1
         perf.last_result = "correct"
-    elif pts == 2:
+    elif points == 2:
         perf.times_correct += 1
         perf.correct_second += 1
         perf.last_result = "correct"
-    elif pts == 1:
+    elif points == 1:
         perf.times_correct += 1
         perf.correct_after_cue += 1
         perf.last_result = "correct"
@@ -585,8 +885,7 @@ def _build_item_metric_row(row: UserItemPerformance) -> dict:
 
 async def _get_item_analytics_for_user(user: User) -> dict:
     rows = await UserItemPerformance.filter(user=user).all()
-
-    all_rows = [_build_item_metric_row(r) for r in rows]
+    all_rows = [_build_item_metric_row(row) for row in rows]
 
     hardest_items = sorted(
         all_rows,
@@ -599,18 +898,27 @@ async def _get_item_analytics_for_user(user: User) -> dict:
     )[:10]
 
     most_cue_dependent_items = sorted(
-        [r for r in all_rows if r["technique_id"] in {"image_naming", "naming_with_cues"}],
+        [
+            row for row in all_rows
+            if row["technique_id"] in {"image_naming", "naming_with_cues"}
+        ],
         key=lambda x: (-x["cue_rate"], -x["times_cue_shown"], x["first_try_rate"]),
     )[:10]
 
     weakest_sentence_items = sorted(
-        [r for r in all_rows if r["technique_id"] == "sentence_repetition" and r["avg_sentence_accuracy"] is not None],
+        [
+            row
+            for row in all_rows
+            if row["technique_id"] == "sentence_repetition"
+            and row["avg_sentence_accuracy"] is not None
+        ],
         key=lambda x: (x["avg_sentence_accuracy"], -x["times_seen"]),
     )[:10]
 
     by_technique: dict[str, dict] = {}
+
     for technique_id in SUPPORTED_TECHNIQUE_IDS:
-        technique_rows = [r for r in all_rows if r["technique_id"] == technique_id]
+        technique_rows = [row for row in all_rows if row["technique_id"] == technique_id]
 
         by_technique[technique_id] = {
             "hardest_items": sorted(
@@ -626,7 +934,7 @@ async def _get_item_analytics_for_user(user: User) -> dict:
                 key=lambda x: (-x["cue_rate"], -x["times_cue_shown"]),
             )[:5],
             "weakest_sentence_items": sorted(
-                [r for r in technique_rows if r["avg_sentence_accuracy"] is not None],
+                [row for row in technique_rows if row["avg_sentence_accuracy"] is not None],
                 key=lambda x: (x["avg_sentence_accuracy"], -x["times_seen"]),
             )[:5],
         }
@@ -666,17 +974,17 @@ async def me(clerk_user_id: str = Depends(require_clerk_user_id)):
 @app.get("/api/personalisation", response_model=UserProfileOut)
 async def get_personalisation(clerk_user_id: str = Depends(require_clerk_user_id)):
     user = await get_or_create_user(clerk_user_id)
-    prof = await get_or_create_profile(user)
+    profile = await get_or_create_profile(user)
 
     return UserProfileOut(
-        interests_text=prof.interests_text or "",
-        avoid_topics_text=prof.avoid_topics_text,
-        difficulty=prof.difficulty,
-        sentence_length=prof.sentence_length,
-        cue_enabled=prof.cue_enabled,
-        allow_generated_images=prof.allow_generated_images,
-        image_generation_mode=getattr(prof, "image_generation_mode", "none") or "none",
-        updated_at=prof.updated_at,
+        interests_text=profile.interests_text or "",
+        avoid_topics_text=profile.avoid_topics_text,
+        difficulty=profile.difficulty,
+        sentence_length=profile.sentence_length,
+        cue_enabled=profile.cue_enabled,
+        allow_generated_images=profile.allow_generated_images,
+        image_generation_mode=getattr(profile, "image_generation_mode", "none") or "none",
+        updated_at=profile.updated_at,
     )
 
 
@@ -686,7 +994,7 @@ async def save_personalisation(
     clerk_user_id: str = Depends(require_clerk_user_id),
 ):
     user = await get_or_create_user(clerk_user_id)
-    prof = await get_or_create_profile(user)
+    profile = await get_or_create_profile(user)
 
     requested_mode = (payload.image_generation_mode or "none").strip().lower()
     if requested_mode not in {"none", "openai", "local"}:
@@ -696,15 +1004,15 @@ async def save_personalisation(
     if not allow_generated_images:
         requested_mode = "none"
 
-    prof.interests_text = payload.interests_text or ""
-    prof.avoid_topics_text = payload.avoid_topics_text
-    prof.difficulty = max(1, min(3, int(payload.difficulty or 1)))
-    prof.sentence_length = max(1, min(3, int(payload.sentence_length or 1)))
-    prof.cue_enabled = bool(payload.cue_enabled)
-    prof.allow_generated_images = allow_generated_images
-    prof.image_generation_mode = requested_mode
+    profile.interests_text = payload.interests_text or ""
+    profile.avoid_topics_text = payload.avoid_topics_text
+    profile.difficulty = max(1, min(3, int(payload.difficulty or 1)))
+    profile.sentence_length = max(1, min(3, int(payload.sentence_length or 1)))
+    profile.cue_enabled = bool(payload.cue_enabled)
+    profile.allow_generated_images = allow_generated_images
+    profile.image_generation_mode = requested_mode
 
-    await prof.save(
+    await profile.save(
         update_fields=[
             "interests_text",
             "avoid_topics_text",
@@ -715,17 +1023,17 @@ async def save_personalisation(
             "image_generation_mode",
         ]
     )
-    await prof.refresh_from_db()
+    await profile.refresh_from_db()
 
     return UserProfileOut(
-        interests_text=prof.interests_text or "",
-        avoid_topics_text=prof.avoid_topics_text,
-        difficulty=prof.difficulty,
-        sentence_length=prof.sentence_length,
-        cue_enabled=prof.cue_enabled,
-        allow_generated_images=prof.allow_generated_images,
-        image_generation_mode=prof.image_generation_mode or "none",
-        updated_at=prof.updated_at,
+        interests_text=profile.interests_text or "",
+        avoid_topics_text=profile.avoid_topics_text,
+        difficulty=profile.difficulty,
+        sentence_length=profile.sentence_length,
+        cue_enabled=profile.cue_enabled,
+        allow_generated_images=profile.allow_generated_images,
+        image_generation_mode=profile.image_generation_mode or "none",
+        updated_at=profile.updated_at,
     )
 
 
@@ -745,7 +1053,7 @@ async def generate_personalised_pack(
     clerk_user_id: str = Depends(require_clerk_user_id),
 ):
     user = await get_or_create_user(clerk_user_id)
-    prof = await get_or_create_profile(user)
+    profile = await get_or_create_profile(user)
 
     technique_id = _validate_technique_id(payload.technique_id)
 
@@ -753,13 +1061,13 @@ async def generate_personalised_pack(
     n_items = max(1, min(25, n_items))
 
     profile_dict = {
-        "interests_text": prof.interests_text or "",
-        "avoid_topics_text": prof.avoid_topics_text or "",
-        "difficulty": int(payload.difficulty or prof.difficulty or 1),
-        "sentence_length": int(prof.sentence_length or 1),
-        "cue_enabled": bool(prof.cue_enabled),
-        "allow_generated_images": bool(prof.allow_generated_images),
-        "image_generation_mode": (prof.image_generation_mode or "none"),
+        "interests_text": profile.interests_text or "",
+        "avoid_topics_text": profile.avoid_topics_text or "",
+        "difficulty": int(payload.difficulty or profile.difficulty or 1),
+        "sentence_length": int(profile.sentence_length or 1),
+        "cue_enabled": bool(profile.cue_enabled),
+        "allow_generated_images": bool(profile.allow_generated_images),
+        "image_generation_mode": profile.image_generation_mode or "none",
     }
 
     print("PROFILE SETTINGS:")
@@ -767,8 +1075,8 @@ async def generate_personalised_pack(
 
     try:
         pack = await build_content_pack(profile_dict, technique_id, n_items=n_items)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate pack: {str(e)}")
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Failed to generate pack: {str(error)}")
 
     existing = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
     if existing:
@@ -848,7 +1156,10 @@ class ScorePayload(BaseModel):
 
 
 @app.post("/api/score")
-async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(require_clerk_user_id)):
+async def update_score(
+    payload: ScorePayload,
+    clerk_user_id: str = Depends(require_clerk_user_id),
+):
     user = await get_or_create_user(clerk_user_id)
     technique_id = _validate_technique_id(payload.technique_id)
 
@@ -944,21 +1255,21 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
     session_avg_sentence_accuracy = None
 
     if items:
-        attempts_sum = sum(max(0, _safe_int(it.attemptsUsed)) for it in items)
+        attempts_sum = sum(max(0, _safe_int(item.attemptsUsed)) for item in items)
 
         stats.total_attempts += attempts_sum
         daily_tech.total_attempts += attempts_sum
 
-        for it in items:
-            pts = _safe_int(it.awardedPoints)
+        for item in items:
+            points = _safe_int(item.awardedPoints)
 
-            if pts == 3:
+            if points == 3:
                 stats.correct_first += 1
                 daily_tech.correct_first += 1
-            elif pts == 2:
+            elif points == 2:
                 stats.correct_second += 1
                 daily_tech.correct_second += 1
-            elif pts == 1:
+            elif points == 1:
                 stats.correct_after_cue += 1
                 daily_tech.correct_after_cue += 1
             else:
@@ -968,14 +1279,14 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
             await _update_item_performance(
                 user=user,
                 technique_id=technique_id,
-                score_item=it,
+                score_item=item,
             )
 
         if technique_id == "sentence_repetition":
             sentence_accuracies = [
-                float(it.sentence_accuracy)
-                for it in items
-                if it.sentence_accuracy is not None
+                float(item.sentence_accuracy)
+                for item in items
+                if item.sentence_accuracy is not None
             ]
 
             if sentence_accuracies:
@@ -985,7 +1296,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
                 stats.sentence_items_evaluated += len(sentence_accuracies)
                 stats.best_sentence_accuracy = max(
                     float(stats.best_sentence_accuracy or 0.0),
-                    session_avg_sentence_accuracy
+                    session_avg_sentence_accuracy,
                 )
 
                 daily_tech.total_sentence_accuracy += sum(sentence_accuracies)
@@ -996,7 +1307,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
 
     avg_attempts = None
     if items:
-        total_attempts = sum(max(0, _safe_int(it.attemptsUsed)) for it in items)
+        total_attempts = sum(max(0, _safe_int(item.attemptsUsed)) for item in items)
         avg_attempts = total_attempts / max(1, len(items))
 
     lifetime_avg_sentence_accuracy = (
@@ -1060,7 +1371,7 @@ async def update_score(payload: ScorePayload, clerk_user_id: str = Depends(requi
 
 
 # =========================================================
-# Speech-to-text (image naming / single response)
+# Speech-to-text endpoint
 # =========================================================
 
 @app.post("/api/speech-to-text")
@@ -1092,14 +1403,14 @@ async def speech_to_text(
 
         vocab_list: list[str] = []
         if vocab:
-            vocab_list = [v.strip() for v in vocab.split(",") if v.strip()][:50]
+            vocab_list = [value.strip() for value in vocab.split(",") if value.strip()][:50]
 
         if vocab_list and not too_short:
             kwargs["initial_prompt"] = "Words: " + ", ".join(vocab_list)
 
         result = whisper_model.transcribe(temp_path, **kwargs)
         text = (result.get("text") or "").strip()
-        tnorm = normalize_text(text)
+        transcript_norm = normalize_text(text)
 
         max_no_speech_prob = extract_max_no_speech_prob(result)
 
@@ -1118,7 +1429,7 @@ async def speech_to_text(
                 "no_speech_prob": max_no_speech_prob,
             }
 
-        if any(p in tnorm for p in _PROMPT_LEAK_PHRASES):
+        if any(phrase in transcript_norm for phrase in _PROMPT_LEAK_PHRASES):
             return {
                 "text": "",
                 "matched": False if target else None,
@@ -1134,7 +1445,7 @@ async def speech_to_text(
                 "prompt_leak": True,
             }
 
-        candidates = build_phrase_candidates(tnorm, target or "")
+        candidates = build_phrase_candidates(transcript_norm, target or "")
 
         best_guess = None
         best_dist = 10**9
@@ -1142,14 +1453,14 @@ async def speech_to_text(
         best_phon = False
         best_guess_matched = False
 
-        if vocab_list and tnorm:
+        if vocab_list and transcript_norm:
             best_score_tuple = None
 
             for vocab_target in vocab_list:
-                vocab_candidates = build_phrase_candidates(tnorm, vocab_target)
+                vocab_candidates = build_phrase_candidates(transcript_norm, vocab_target)
 
-                for cand in vocab_candidates:
-                    matched, dist, rel, phon = is_match_phonetic(cand, vocab_target)
+                for candidate in vocab_candidates:
+                    matched, dist, rel, phon = is_match_phonetic(candidate, vocab_target)
                     score_tuple = (0 if matched else 1, rel, dist)
 
                     if best_score_tuple is None or score_tuple < best_score_tuple:
@@ -1165,33 +1476,33 @@ async def speech_to_text(
         rel_vs_target = None
         phon_vs_target = None
 
-        if target and tnorm:
+        if target and transcript_norm:
             best_target_tuple = None
 
-            for cand in candidates:
-                m, d, r, p = is_match_phonetic(cand, target)
-                tup = (0 if m else 1, r, d)
+            for candidate in candidates:
+                matched, dist, rel, phon = is_match_phonetic(candidate, target)
+                score_tuple = (0 if matched else 1, rel, dist)
 
-                if best_target_tuple is None or tup < best_target_tuple:
-                    best_target_tuple = tup
-                    matched_vs_target = bool(m)
-                    dist_vs_target = d
-                    rel_vs_target = r
-                    phon_vs_target = bool(p)
+                if best_target_tuple is None or score_tuple < best_target_tuple:
+                    best_target_tuple = score_tuple
+                    matched_vs_target = bool(matched)
+                    dist_vs_target = dist
+                    rel_vs_target = rel
+                    phon_vs_target = bool(phon)
 
         final_matched = (
             matched_vs_target
             if matched_vs_target is not None
-            else (bool(best_guess_matched) if vocab_list and tnorm else None)
+            else (bool(best_guess_matched) if vocab_list and transcript_norm else None)
         )
 
         return {
             "text": text,
             "matched": final_matched,
             "best_guess": best_guess,
-            "distance": dist_vs_target if dist_vs_target is not None else (best_dist if vocab_list and tnorm else None),
-            "rel_distance": rel_vs_target if rel_vs_target is not None else (best_rel if vocab_list and tnorm else None),
-            "phonetic_used": phon_vs_target if phon_vs_target is not None else (bool(best_phon) if vocab_list and tnorm else None),
+            "distance": dist_vs_target if dist_vs_target is not None else (best_dist if vocab_list and transcript_norm else None),
+            "rel_distance": rel_vs_target if rel_vs_target is not None else (best_rel if vocab_list and transcript_norm else None),
+            "phonetic_used": phon_vs_target if phon_vs_target is not None else (bool(best_phon) if vocab_list and transcript_norm else None),
             "target": target,
             "attempt_num": attempt_num,
             "cue_shown": bool(cue_shown) if cue_shown is not None else None,
@@ -1199,8 +1510,133 @@ async def speech_to_text(
             "no_speech_prob": max_no_speech_prob,
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(error)}")
+
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+# =========================================================
+# Semantic feature analysis evaluation
+# =========================================================
+
+@app.post("/api/sfa-eval")
+async def sfa_eval(
+    audio: UploadFile = File(...),
+    target_word: str = Form(...),
+    vocab: str | None = Form(default=None),
+    semantic_hint: str | None = Form(default=None),
+    tags: str | None = Form(default=None),
+    attempt_num: int | None = Form(default=None),
+    cue_shown: int | None = Form(default=None),
+):
+    temp_path = f"{TEMP_AUDIO_DIR}/{uuid.uuid4().hex}.webm"
+
+    try:
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(audio.file, buffer)
+
+        file_size = os.path.getsize(temp_path)
+        too_short = file_size < _MIN_WEBM_BYTES
+
+        kwargs = {
+            "language": "en",
+            "task": "transcribe",
+            "temperature": 0,
+            "condition_on_previous_text": False,
+            "no_speech_threshold": 0.6,
+            "logprob_threshold": -1.0,
+            "compression_ratio_threshold": 2.4,
+        }
+
+        candidate_words = []
+        if vocab:
+            candidate_words = [value.strip() for value in vocab.split(",") if value.strip()][:50]
+
+        prompt_parts = []
+        if candidate_words:
+            prompt_parts.append("Possible words: " + ", ".join(candidate_words[:30]))
+        if cue_shown and semantic_hint:
+            prompt_parts.append("Hint context: " + semantic_hint.strip())
+        if tags:
+            prompt_parts.append("Related tags: " + tags.strip())
+
+        if prompt_parts and not too_short:
+            kwargs["initial_prompt"] = " | ".join(prompt_parts)
+
+        result = whisper_model.transcribe(temp_path, **kwargs)
+        text = (result.get("text") or "").strip()
+        transcript_norm = normalize_text(text)
+
+        max_no_speech_prob = extract_max_no_speech_prob(result)
+
+        if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
+            return {
+                "text": "",
+                "matched": False,
+                "best_guess": None,
+                "distance": None,
+                "rel_distance": None,
+                "phonetic_used": None,
+                "confidence": 0.0,
+                "reason": "No usable speech detected.",
+                "target": target_word,
+                "attempt_num": attempt_num,
+                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+                "too_short": too_short,
+                "no_speech_prob": max_no_speech_prob,
+                "used_direct_match": False,
+                "used_llm_guess": False,
+            }
+
+        if any(phrase in transcript_norm for phrase in _PROMPT_LEAK_PHRASES):
+            return {
+                "text": "",
+                "matched": False,
+                "best_guess": None,
+                "distance": None,
+                "rel_distance": None,
+                "phonetic_used": None,
+                "confidence": 0.0,
+                "reason": "Prompt leakage detected.",
+                "target": target_word,
+                "attempt_num": attempt_num,
+                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+                "too_short": False,
+                "no_speech_prob": max_no_speech_prob,
+                "prompt_leak": True,
+                "used_direct_match": False,
+                "used_llm_guess": False,
+            }
+
+        evaluation = _evaluate_sfa_response(
+            transcript_text=text,
+            target_word=target_word,
+            candidate_words=candidate_words,
+        )
+
+        return {
+            "text": text,
+            "matched": bool(evaluation["matched"]),
+            "best_guess": evaluation["best_guess"],
+            "distance": evaluation["distance"],
+            "rel_distance": evaluation["rel_distance"],
+            "phonetic_used": evaluation["phonetic_used"],
+            "confidence": round(float(evaluation["confidence"]), 4),
+            "reason": evaluation["reason"],
+            "target": target_word,
+            "attempt_num": attempt_num,
+            "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+            "too_short": False,
+            "no_speech_prob": max_no_speech_prob,
+            "used_direct_match": evaluation["used_direct_match"],
+            "used_llm_guess": evaluation["used_llm_guess"],
+        }
+
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"SFA evaluation failed: {str(error)}")
 
     finally:
         if os.path.exists(temp_path):
@@ -1301,9 +1737,9 @@ async def sentence_eval(
         _, rel_distance, similarity_score = compute_similarity_score(transcript_norm, target_norm)
 
         weighted_accuracy = (
-            0.70 * content_accuracy +
-            0.10 * function_accuracy +
-            0.20 * similarity_score
+            0.70 * content_accuracy
+            + 0.10 * function_accuracy
+            + 0.20 * similarity_score
         )
 
         if content_accuracy >= 0.85 and weighted_accuracy >= 0.80:
@@ -1336,8 +1772,8 @@ async def sentence_eval(
             "provided_function_items": provided_function,
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error))
 
     finally:
         if os.path.exists(temp_path):
@@ -1345,7 +1781,7 @@ async def sentence_eval(
 
 
 # =========================================================
-# Optional speech feedback
+# Optional feedback generation
 # =========================================================
 
 @app.post("/api/speech-feedback")
@@ -1376,8 +1812,8 @@ async def speech_feedback(userText: str = Form(...), correctAnswer: str = Form(.
         feedback = response.choices[0].message.content or "Good effort."
         return {"feedback": feedback.strip()}
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"GPT feedback failed: {str(e)}")
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"GPT feedback failed: {str(error)}")
 
 
 # =========================================================
@@ -1395,13 +1831,15 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
     daily_map = {row.day: row for row in daily_rows}
 
     daily_points = []
-    for d in days:
-        row = daily_map.get(d)
-        daily_points.append({
-            "day": d,
-            "points": row.points if row else 0,
-            "sessions": row.sessions_played if row else 0,
-        })
+    for day_value in days:
+        row = daily_map.get(day_value)
+        daily_points.append(
+            {
+                "day": day_value,
+                "points": row.points if row else 0,
+                "sessions": row.sessions_played if row else 0,
+            }
+        )
 
     technique_rows = await UserTechniqueStats.filter(user=user).all()
     techniques = {}
@@ -1461,8 +1899,8 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
     for technique_id in sorted(SUPPORTED_TECHNIQUE_IDS):
         series = []
 
-        for d in days:
-            row = by_technique_day.get((technique_id, d))
+        for day_value in days:
+            row = by_technique_day.get((technique_id, day_value))
 
             points = row.points if row else 0
             sessions_played = row.sessions_played if row else 0
@@ -1473,30 +1911,26 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
             total_sentence_accuracy = row.total_sentence_accuracy if row else 0.0
             sentence_items_evaluated = row.sentence_items_evaluated if row else 0
 
-            first_try_accuracy = (
-                correct_first / total_items if total_items > 0 else 0.0
-            )
-            avg_attempts_per_item = (
-                total_attempts / total_items if total_items > 0 else 0.0
-            )
-            cue_usage_rate = (
-                correct_after_cue / total_items if total_items > 0 else 0.0
-            )
+            first_try_accuracy = correct_first / total_items if total_items > 0 else 0.0
+            avg_attempts_per_item = total_attempts / total_items if total_items > 0 else 0.0
+            cue_usage_rate = correct_after_cue / total_items if total_items > 0 else 0.0
             sentence_accuracy = (
                 total_sentence_accuracy / sentence_items_evaluated
                 if sentence_items_evaluated > 0 else 0.0
             )
 
-            series.append({
-                "day": d,
-                "points": points,
-                "sessions": sessions_played,
-                "first_try_accuracy": round(first_try_accuracy, 4),
-                "avg_attempts_per_item": round(avg_attempts_per_item, 2),
-                "cue_usage_rate": round(cue_usage_rate, 4),
-                "sentence_accuracy": round(sentence_accuracy, 4),
-                "total_items": total_items,
-            })
+            series.append(
+                {
+                    "day": day_value,
+                    "points": points,
+                    "sessions": sessions_played,
+                    "first_try_accuracy": round(first_try_accuracy, 4),
+                    "avg_attempts_per_item": round(avg_attempts_per_item, 2),
+                    "cue_usage_rate": round(cue_usage_rate, 4),
+                    "sentence_accuracy": round(sentence_accuracy, 4),
+                    "total_items": total_items,
+                }
+            )
 
         technique_history[technique_id] = series
 
@@ -1585,7 +2019,7 @@ async def get_technique_stats(
 
 
 # =========================================================
-# DB registration
+# Database registration
 # =========================================================
 
 register_tortoise(

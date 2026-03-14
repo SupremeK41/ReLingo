@@ -1,22 +1,24 @@
 // frontend/src/components/NamingWithCues.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@clerk/clerk-react";
+
 import "../App.css";
 import "./BasicSpeech.css";
-
-import { useAuth } from "@clerk/clerk-react";
 import wordPairs from "../data/wordPairs.json";
 
 const SESSION_SIZE = 10;
 const TECHNIQUE_ID = "naming_with_cues";
 const API_BASE = "http://localhost:8000";
 
-function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
+function shuffle(items) {
+  const shuffled = [...items];
+
+  for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
-  return a;
+
+  return shuffled;
 }
 
 function resolveImagePath(image) {
@@ -36,31 +38,39 @@ function resolveImagePath(image) {
   return `/images/${image}`;
 }
 
-function pointsForAttempt(attemptNum) {
-  if (attemptNum === 1) return 3;
-  if (attemptNum === 2) return 2;
+function pointsForAttempt(attemptNumber) {
+  if (attemptNumber === 1) return 3;
+  if (attemptNumber === 2) return 2;
   return 1;
 }
 
 function isNoSpeech(payload) {
   if (!payload) return false;
-  const t = (payload.text || "").trim();
-  if (t !== "") return false;
+
+  const text = (payload.text || "").trim();
+  if (text !== "") return false;
 
   if (payload.too_short) return true;
   if (typeof payload.no_speech_prob === "number" && payload.no_speech_prob >= 0.8) return true;
   if (payload.prompt_leak) return true;
 
-  if (payload.best_guess == null && payload.distance == null && payload.rel_distance == null) return true;
+  if (
+    payload.best_guess == null &&
+    payload.distance == null &&
+    payload.rel_distance == null
+  ) {
+    return true;
+  }
 
   return false;
 }
 
-function normaliseFallbackItem(it) {
-  const word = String(it?.word || "").trim();
+function normaliseFallbackItem(item) {
+  const word = String(item?.word || "").trim();
+
   return {
     word,
-    image: String(it?.image || "").trim(),
+    image: String(item?.image || "").trim(),
     semantic_cue: `It is related to ${word}.`,
     phonemic_cue: word ? `It starts with '${word[0]}'.` : "",
     full_cue: word,
@@ -72,7 +82,9 @@ export default function NamingWithCues() {
 
   const [contentSource, setContentSource] = useState("local");
   const [baseItems, setBaseItems] = useState(
-    Array.isArray(wordPairs) ? wordPairs.map(normaliseFallbackItem).filter((it) => it.word) : []
+    Array.isArray(wordPairs)
+      ? wordPairs.map(normaliseFallbackItem).filter((item) => item.word)
+      : []
   );
   const [packError, setPackError] = useState(null);
 
@@ -88,19 +100,19 @@ export default function NamingWithCues() {
 
   const [sessionPoints, setSessionPoints] = useState(0);
   const [attemptNum, setAttemptNum] = useState(1);
-  const [cueLevel, setCueLevel] = useState(0); // 0 none, 1 semantic, 2 phonemic, 3 full
+  const [cueLevel, setCueLevel] = useState(0); // 0 = none, 1 = semantic, 2 = phonemic, 3 = full answer
   const [completed, setCompleted] = useState(false);
 
   const [scorePostResult, setScorePostResult] = useState(null);
   const [scorePostError, setScorePostError] = useState(null);
 
+  const [sessionSeed, setSessionSeed] = useState(0);
+  const [itemResults, setItemResults] = useState([]);
+
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
-
-  const [sessionSeed, setSessionSeed] = useState(0);
   const postedSessionRef = useRef(false);
-  const [itemResults, setItemResults] = useState([]);
 
   const [isMuted, setIsMuted] = useState(() => {
     try {
@@ -122,10 +134,12 @@ export default function NamingWithCues() {
     if (!("speechSynthesis" in window)) return;
 
     window.speechSynthesis.cancel();
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.9;
     utterance.pitch = 1;
     utterance.volume = 1;
+
     window.speechSynthesis.speak(utterance);
   }
 
@@ -136,9 +150,13 @@ export default function NamingWithCues() {
   }, [feedback]);
 
   const toggleMute = () => {
-    setIsMuted((m) => {
-      const next = !m;
-      if (next && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    setIsMuted((current) => {
+      const next = !current;
+
+      if (next && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+
       return next;
     });
   };
@@ -149,46 +167,60 @@ export default function NamingWithCues() {
 
       try {
         const token = await getToken();
+
         if (!token) {
           setContentSource("local");
           setBaseItems(
-            Array.isArray(wordPairs) ? wordPairs.map(normaliseFallbackItem).filter((it) => it.word) : []
+            Array.isArray(wordPairs)
+              ? wordPairs.map(normaliseFallbackItem).filter((item) => item.word)
+              : []
           );
           return;
         }
 
-        const res = await fetch(`${API_BASE}/api/content-pack/active/${TECHNIQUE_ID}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const response = await fetch(
+          `${API_BASE}/api/content-pack/active/${TECHNIQUE_ID}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
 
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.detail || "Failed to load content pack");
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.detail || "Failed to load content pack");
+        }
 
         const items = Array.isArray(data?.items) ? data.items : [];
-        const cleaned = items
-          .map((it) => ({
-            word: String(it?.word || "").trim(),
-            image: String(it?.image || "").trim(),
-            semantic_cue: String(it?.semantic_cue || "").trim(),
-            phonemic_cue: String(it?.phonemic_cue || "").trim(),
-            full_cue: String(it?.full_cue || it?.word || "").trim(),
+        const cleanedItems = items
+          .map((item) => ({
+            word: String(item?.word || "").trim(),
+            image: String(item?.image || "").trim(),
+            semantic_cue: String(item?.semantic_cue || "").trim(),
+            phonemic_cue: String(item?.phonemic_cue || "").trim(),
+            full_cue: String(item?.full_cue || item?.word || "").trim(),
           }))
-          .filter((it) => it.word);
+          .filter((item) => item.word);
 
-        if (cleaned.length > 0) {
+        if (cleanedItems.length > 0) {
           setContentSource("pack");
-          setBaseItems(cleaned);
+          setBaseItems(cleanedItems);
         } else {
           setContentSource("local");
           setBaseItems(
-            Array.isArray(wordPairs) ? wordPairs.map(normaliseFallbackItem).filter((it) => it.word) : []
+            Array.isArray(wordPairs)
+              ? wordPairs.map(normaliseFallbackItem).filter((item) => item.word)
+              : []
           );
         }
-      } catch (e) {
-        setPackError(String(e.message || e));
+      } catch (err) {
+        setPackError(String(err.message || err));
         setContentSource("local");
         setBaseItems(
-          Array.isArray(wordPairs) ? wordPairs.map(normaliseFallbackItem).filter((it) => it.word) : []
+          Array.isArray(wordPairs)
+            ? wordPairs.map(normaliseFallbackItem).filter((item) => item.word)
+            : []
         );
       }
     };
@@ -234,6 +266,7 @@ export default function NamingWithCues() {
 
   const nextItem = () => {
     const nextIndex = currentIndex + 1;
+
     if (nextIndex < sessionWords.length) {
       resetForNextItem(nextIndex);
     } else {
@@ -247,7 +280,7 @@ export default function NamingWithCues() {
   const finalizeCurrentItem = ({ awardedPoints, payload }) => {
     const target = currentItem?.word || "";
 
-    setSessionPoints((p) => p + awardedPoints);
+    setSessionPoints((points) => points + awardedPoints);
 
     setItemResults((prev) => [
       ...prev,
@@ -277,15 +310,20 @@ export default function NamingWithCues() {
     const matched = !!payload?.matched;
 
     if (matched) {
-      const pts = pointsForAttempt(attemptNum);
+      const points = pointsForAttempt(attemptNum);
+
       setFeedback(
         attemptNum === 1
           ? "Correct independently. Plus 3 points."
           : attemptNum === 2
-            ? "Correct after the semantic cue. Plus 2 points."
-            : "Correct after the phonemic cue. Plus 1 point."
+          ? "Correct after the semantic cue. Plus 2 points."
+          : "Correct after the phonemic cue. Plus 1 point."
       );
-      finalizeCurrentItem({ awardedPoints: pts, payload });
+
+      finalizeCurrentItem({
+        awardedPoints: points,
+        payload,
+      });
       return;
     }
 
@@ -308,8 +346,47 @@ export default function NamingWithCues() {
     }
 
     setCueLevel(3);
-    setFeedback(`The word is ${currentItem?.full_cue || currentItem?.word || ""}. Zero points for this one.`);
-    finalizeCurrentItem({ awardedPoints: 0, payload });
+    setFeedback(
+      `The word is ${currentItem?.full_cue || currentItem?.word || ""}. Zero points for this one.`
+    );
+    finalizeCurrentItem({
+      awardedPoints: 0,
+      payload,
+    });
+  };
+
+  const handleUpload = async (audioBlob) => {
+    if (!currentItem) return;
+
+    const formData = new FormData();
+    formData.append("audio", audioBlob, "recording.webm");
+
+    const vocab = sessionWords.map((item) => item.word).join(",");
+    formData.append("vocab", vocab);
+    formData.append("target", currentItem.word);
+    formData.append("attempt_num", String(attemptNum));
+    formData.append("cue_shown", cueLevel > 0 ? "1" : "0");
+
+    try {
+      const response = await fetch(`${API_BASE}/api/speech-to-text`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to process audio");
+      }
+
+      const data = await response.json();
+
+      setAudioResult(data.text || "");
+      setError(null);
+
+      handleEvaluationResult(data);
+    } catch (err) {
+      setError("Failed to process audio: " + err.message);
+      setLockedUntilNext(false);
+    }
   };
 
   const startRecording = async () => {
@@ -317,6 +394,7 @@ export default function NamingWithCues() {
 
     try {
       setError(null);
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
@@ -325,7 +403,9 @@ export default function NamingWithCues() {
       chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) chunksRef.current.push(event.data);
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
       };
 
       mediaRecorder.onstop = async () => {
@@ -336,7 +416,7 @@ export default function NamingWithCues() {
           const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" });
           await handleUpload(audioBlob);
         } finally {
-          stream.getTracks().forEach((t) => t.stop());
+          stream.getTracks().forEach((track) => track.stop());
           streamRef.current = null;
           setIsProcessing(false);
         }
@@ -356,45 +436,13 @@ export default function NamingWithCues() {
     }
   };
 
-  const handleUpload = async (audioBlob) => {
-    if (!currentItem) return;
-
-    const formData = new FormData();
-    formData.append("audio", audioBlob, "recording.webm");
-
-    const vocab = sessionWords.map((x) => x.word).join(",");
-    formData.append("vocab", vocab);
-    formData.append("target", currentItem.word);
-    formData.append("attempt_num", String(attemptNum));
-    formData.append("cue_shown", cueLevel > 0 ? "1" : "0");
-
-    try {
-      const response = await fetch(`${API_BASE}/api/speech-to-text`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) throw new Error("Failed to process audio");
-
-      const data = await response.json();
-
-      setAudioResult(data.text || "");
-      setError(null);
-
-      handleEvaluationResult(data);
-    } catch (e) {
-      setError("Failed to process audio: " + e.message);
-      setLockedUntilNext(false);
-    }
-  };
-
   useEffect(() => {
     const postSessionScore = async () => {
       try {
         const token = await getToken();
         if (!token) return;
 
-        const res = await fetch(`${API_BASE}/api/score`, {
+        const response = await fetch(`${API_BASE}/api/score`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -408,12 +456,14 @@ export default function NamingWithCues() {
           }),
         });
 
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.detail || "Failed to submit score");
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.detail || "Failed to submit score");
+        }
 
         setScorePostResult(data);
-      } catch (e) {
-        setScorePostError(String(e.message || e));
+      } catch (err) {
+        setScorePostError(String(err.message || err));
       }
     };
 
@@ -424,7 +474,7 @@ export default function NamingWithCues() {
   }, [completed, sessionPoints, sessionWords.length, itemResults, getToken]);
 
   const resetSession = () => {
-    setSessionSeed((s) => s + 1);
+    setSessionSeed((seed) => seed + 1);
   };
 
   const recordDisabled = completed || isProcessing || lockedUntilNext;
@@ -457,23 +507,26 @@ export default function NamingWithCues() {
           )}
 
           <span style={{ marginLeft: 12, opacity: 0.85 }}>
-            <strong>Source:</strong> {contentSource === "pack" ? "Personalised" : "Default"}
+            <strong>Source:</strong>{" "}
+            {contentSource === "pack" ? "Personalised" : "Default"}
           </span>
 
           <button
+            type="button"
             onClick={toggleMute}
             style={{
               marginLeft: 14,
               padding: "6px 12px",
               borderRadius: "20px",
               border: "1px solid rgba(255,255,255,0.2)",
-              background: isMuted ? "rgba(255, 80, 80, 0.15)" : "rgba(80, 200, 120, 0.15)",
+              background: isMuted
+                ? "rgba(255, 80, 80, 0.15)"
+                : "rgba(80, 200, 120, 0.15)",
               color: "inherit",
               fontWeight: 500,
               cursor: "pointer",
               transition: "all 0.2s ease",
             }}
-            type="button"
           >
             {isMuted ? "Muted" : "Voice On"}
           </button>
@@ -487,35 +540,54 @@ export default function NamingWithCues() {
 
         <div className="practice-cards">
           <div className="practice-card">
-            {!completed ? (
-              currentItem && (
-                <div className="image-container">
-                  <img
-                    src={resolveImagePath(currentItem.image)}
-                    alt="Naming prompt"
-                    className="practice-image"
-                  />
+            {!completed && currentItem && (
+              <div className="image-container">
+                <img
+                  src={resolveImagePath(currentItem.image)}
+                  alt="Naming prompt"
+                  className="practice-image"
+                />
 
-                  {cueLevel >= 1 && (
-                    <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)" }}>
-                      <strong>Semantic cue:</strong> {currentItem.semantic_cue}
-                    </div>
-                  )}
+                {cueLevel >= 1 && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: 10,
+                      borderRadius: 10,
+                      border: "1px solid rgba(255,255,255,0.15)",
+                    }}
+                  >
+                    <strong>Semantic cue:</strong> {currentItem.semantic_cue}
+                  </div>
+                )}
 
-                  {cueLevel >= 2 && (
-                    <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)" }}>
-                      <strong>Phonemic cue:</strong> {currentItem.phonemic_cue}
-                    </div>
-                  )}
+                {cueLevel >= 2 && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: 10,
+                      borderRadius: 10,
+                      border: "1px solid rgba(255,255,255,0.15)",
+                    }}
+                  >
+                    <strong>Phonemic cue:</strong> {currentItem.phonemic_cue}
+                  </div>
+                )}
 
-                  {cueLevel >= 3 && (
-                    <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)" }}>
-                      <strong>Answer:</strong> {currentItem.full_cue}
-                    </div>
-                  )}
-                </div>
-              )
-            ) : null}
+                {cueLevel >= 3 && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      padding: 10,
+                      borderRadius: 10,
+                      border: "1px solid rgba(255,255,255,0.15)",
+                    }}
+                  >
+                    <strong>Answer:</strong> {currentItem.full_cue}
+                  </div>
+                )}
+              </div>
+            )}
 
             {!completed && (
               <div className="recording-section">
@@ -527,8 +599,8 @@ export default function NamingWithCues() {
                   {isRecording
                     ? "Stop Recording"
                     : isProcessing
-                      ? "Processing..."
-                      : "Start Recording"}
+                    ? "Processing..."
+                    : "Start Recording"}
                 </button>
               </div>
             )}
@@ -562,8 +634,11 @@ export default function NamingWithCues() {
                 </p>
 
                 {scorePostError && (
-                  <p className="error-message">Score post error: {scorePostError}</p>
+                  <p className="error-message">
+                    Score post error: {scorePostError}
+                  </p>
                 )}
+
                 {scorePostResult && <p style={{ opacity: 0.9 }}>Score saved.</p>}
 
                 <div className="recording-section">

@@ -11,12 +11,12 @@ class TechniqueStatsOut(BaseModel):
 
     technique_id: str
 
-    # Legacy (kept)
+    # Legacy fields kept for compatibility
     total_exp: int
     best_score: int
     attempts: int
 
-    # New
+    # Current rollups
     total_points: int
     best_session_points: int
     sessions_played: int
@@ -45,18 +45,18 @@ class UserOut(BaseModel):
     today_sessions: Optional[int] = None
 
 
-# ---------------------------
+# =========================================================
 # Personalisation schemas
-# ---------------------------
+# =========================================================
 
 class UserProfileIn(BaseModel):
     interests_text: str = ""
     avoid_topics_text: Optional[str] = None
 
-    # 1=easy 2=medium 3=hard
+    # 1 = easy, 2 = medium, 3 = hard
     difficulty: int = 1
 
-    # 1=short 2=medium 3=long
+    # 1 = short, 2 = medium, 3 = long
     sentence_length: int = 1
 
     cue_enabled: bool = True
@@ -84,8 +84,9 @@ class UserProfileOut(BaseModel):
 
 class ContentPackOut(BaseModel):
     """
-    Wrapper response for any technique-specific pack.
-    items is intentionally Any because shapes differ by technique.
+    Generic wrapper for any generated content pack.
+
+    items stays as Any because each technique can return a different item shape.
     """
     model_config = ConfigDict(from_attributes=True)
 
