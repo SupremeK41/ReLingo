@@ -19,6 +19,11 @@ const TECHNIQUES = [
     label: "Sentence Repetition",
     tip: "Focus on the key content words first, then add the small connecting words.",
   },
+  {
+    id: "semantic_feature_analysis",
+    label: "Semantic Feature Analysis",
+    tip: "Build the meaning step by step. Think about category, function, location, appearance, and related ideas before naming the word.",
+  },
 ];
 
 const GRAPH_TECHNIQUE_OPTIONS = [
@@ -26,6 +31,7 @@ const GRAPH_TECHNIQUE_OPTIONS = [
   { id: "image_naming", label: "Image Naming" },
   { id: "naming_with_cues", label: "Naming with Cues" },
   { id: "sentence_repetition", label: "Sentence Repetition" },
+  { id: "semantic_feature_analysis", label: "Semantic Feature Analysis" },
 ];
 
 const GRAPH_METRIC_OPTIONS = {
@@ -55,6 +61,13 @@ const GRAPH_METRIC_OPTIONS = {
     { id: "first_try_accuracy", label: "First Attempt Accuracy" },
     { id: "avg_attempts_per_item", label: "Avg Attempts / Item" },
     { id: "sentence_accuracy", label: "Sentence Accuracy" },
+    { id: "total_items", label: "Items Trained" },
+  ],
+  semantic_feature_analysis: [
+    { id: "points", label: "Points" },
+    { id: "sessions", label: "Sessions" },
+    { id: "first_try_accuracy", label: "First Attempt Accuracy" },
+    { id: "avg_attempts_per_item", label: "Avg Attempts / Item" },
     { id: "total_items", label: "Items Trained" },
   ],
 };
@@ -334,6 +347,23 @@ function TechniqueCard({ technique, stats }) {
           <div className="stat">
             <div className="stat-label">Sentence Items</div>
             <div className="stat-value">{stats?.sentence_items_evaluated ?? 0}</div>
+          </div>
+        </div>
+      ) : null}
+
+      {!showCue && !isSentence ? (
+        <div className="stats-row">
+          <div className="stat">
+            <div className="stat-label">Correct First</div>
+            <div className="stat-value">{stats?.correct_first ?? 0}</div>
+          </div>
+          <div className="stat">
+            <div className="stat-label">Correct Second</div>
+            <div className="stat-value">{stats?.correct_second ?? 0}</div>
+          </div>
+          <div className="stat">
+            <div className="stat-label">Incorrect</div>
+            <div className="stat-value">{stats?.incorrect ?? 0}</div>
           </div>
         </div>
       ) : null}
@@ -672,7 +702,7 @@ export default function Progress() {
                   </div>
 
                   <div className="progress-note" style={{ marginTop: 16 }}>
-                    Compare points, sessions, first-attempt performance, cue usage, and sentence accuracy across the last 7 days.
+                    Compare points, sessions, first-attempt performance, average attempts, cue usage, and sentence accuracy across the last 7 days where relevant to each technique.
                   </div>
                 </div>
               </div>
