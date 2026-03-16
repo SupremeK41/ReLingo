@@ -7,21 +7,25 @@ const TECHNIQUES = [
   {
     id: "image_naming",
     label: "Image Naming",
+    shortLabel: "Image Naming",
     tip: "Pause, breathe, then try again slowly. Clean naming matters more than rushing.",
   },
   {
     id: "naming_with_cues",
     label: "Naming with Cues",
+    shortLabel: "With Cues",
     tip: "Use the cue as support, then aim to retrieve the word more independently over time.",
   },
   {
     id: "sentence_repetition",
     label: "Sentence Repetition",
+    shortLabel: "Sentence Repetition",
     tip: "Focus on the key content words first, then add the small connecting words.",
   },
   {
     id: "semantic_feature_analysis",
     label: "Semantic Feature Analysis",
+    shortLabel: "SFA",
     tip: "Build the meaning step by step. Think about category, function, location, appearance, and related ideas before naming the word.",
   },
 ];
@@ -149,7 +153,26 @@ function sectionTitleForTechnique(techniqueId) {
   return TECHNIQUES.find((t) => t.id === techniqueId)?.label || techniqueId;
 }
 
-function ItemMiniList({ title, subtitle, items = [], emptyText = "No data yet." }) {
+function shortTechniqueLabel(techniqueId) {
+  return TECHNIQUES.find((t) => t.id === techniqueId)?.shortLabel || techniqueId;
+}
+
+function CompactStat({ label, value }) {
+  return (
+    <div className="stat">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+    </div>
+  );
+}
+
+function ItemMiniList({
+  title,
+  subtitle,
+  items = [],
+  emptyText = "No data yet.",
+  showTechnique = false,
+}) {
   return (
     <div
       style={{
@@ -171,12 +194,12 @@ function ItemMiniList({ title, subtitle, items = [], emptyText = "No data yet." 
         <div style={{ fontSize: 14, opacity: 0.65 }}>{emptyText}</div>
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
-          {items.slice(0, 5).map((item) => (
+          {items.slice(0, 4).map((item) => (
             <div
               key={item.item_key}
               style={{
                 display: "grid",
-                gridTemplateColumns: item.image ? "52px 1fr auto" : "1fr auto",
+                gridTemplateColumns: item.image ? "48px 1fr auto" : "1fr auto",
                 gap: 12,
                 alignItems: "center",
                 padding: "10px 12px",
@@ -190,8 +213,8 @@ function ItemMiniList({ title, subtitle, items = [], emptyText = "No data yet." 
                   src={`/${item.image}`}
                   alt={item.item_label}
                   style={{
-                    width: 52,
-                    height: 52,
+                    width: 48,
+                    height: 48,
                     objectFit: "cover",
                     borderRadius: 12,
                     border: "1px solid rgba(0,0,0,0.06)",
@@ -212,12 +235,24 @@ function ItemMiniList({ title, subtitle, items = [], emptyText = "No data yet." 
                     WebkitBoxOrient: "vertical",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
-                    cursor: "help",
                     maxWidth: "100%",
                   }}
                 >
                   {item.item_label}
                 </div>
+
+                {showTechnique && item.technique_id ? (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      opacity: 0.75,
+                    }}
+                  >
+                    {shortTechniqueLabel(item.technique_id)}
+                  </div>
+                ) : null}
 
                 <div
                   style={{
@@ -231,26 +266,19 @@ function ItemMiniList({ title, subtitle, items = [], emptyText = "No data yet." 
                 >
                   <span>Seen: {item.times_seen ?? 0}</span>
                   <span>Incorrect: {item.times_incorrect ?? 0}</span>
-                  {item.avg_attempts != null ? (
-                    <span>Avg attempts: {item.avg_attempts}</span>
-                  ) : null}
                 </div>
               </div>
 
-              <div
-                style={{
-                  textAlign: "right",
-                  minWidth: 92,
-                }}
-              >
+              <div style={{ textAlign: "right", minWidth: 88 }}>
                 {item.first_try_rate != null ? (
-                  <div style={{ fontSize: 12, opacity: 0.65 }}>First attempt</div>
+                  <>
+                    <div style={{ fontSize: 12, opacity: 0.65 }}>First attempt</div>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>
+                      {percent(item.first_try_rate)}
+                    </div>
+                  </>
                 ) : null}
-                {item.first_try_rate != null ? (
-                  <div style={{ fontWeight: 800, fontSize: 14 }}>
-                    {percent(item.first_try_rate)}
-                  </div>
-                ) : null}
+
                 {item.avg_sentence_accuracy != null ? (
                   <>
                     <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4 }}>
@@ -273,6 +301,7 @@ function ItemMiniList({ title, subtitle, items = [], emptyText = "No data yet." 
 function TechniqueCard({ technique, stats }) {
   const isSentence = technique.id === "sentence_repetition";
   const showCue = technique.id === "image_naming" || technique.id === "naming_with_cues";
+  const isSfa = technique.id === "semantic_feature_analysis";
 
   return (
     <div className="progress-card">
@@ -282,93 +311,136 @@ function TechniqueCard({ technique, stats }) {
       </div>
 
       <div className="stats-row">
-        <div className="stat">
-          <div className="stat-label">Technique EXP</div>
-          <div className="stat-value">{stats?.total_exp ?? 0}</div>
-        </div>
-        <div className="stat">
-          <div className="stat-label">Best Session</div>
-          <div className="stat-value">
-            {stats?.best_session_points ?? stats?.best_score ?? 0}
-          </div>
-        </div>
-        <div className="stat">
-          <div className="stat-label">Sessions</div>
-          <div className="stat-value">{stats?.sessions_played ?? stats?.attempts ?? 0}</div>
-        </div>
+        <CompactStat label="EXP" value={stats?.total_exp ?? 0} />
+        <CompactStat
+          label="Best Session"
+          value={stats?.best_session_points ?? stats?.best_score ?? 0}
+        />
+        <CompactStat
+          label="Sessions"
+          value={stats?.sessions_played ?? stats?.attempts ?? 0}
+        />
       </div>
 
       <div className="stats-row">
-        <div className="stat">
-          <div className="stat-label">First Attempt Accuracy</div>
-          <div className="stat-value">{percent(stats?.first_try_accuracy)}</div>
-        </div>
-        <div className="stat">
-          <div className="stat-label">Avg Attempts / Item</div>
-          <div className="stat-value">
-            {Number(stats?.avg_attempts_per_item || 0).toFixed(1)}
-          </div>
-        </div>
-        <div className="stat">
-          <div className="stat-label">Items Trained</div>
-          <div className="stat-value">{stats?.total_items ?? 0}</div>
-        </div>
+        <CompactStat
+          label="First Attempt"
+          value={percent(stats?.first_try_accuracy)}
+        />
+        <CompactStat
+          label="Avg Attempts"
+          value={Number(stats?.avg_attempts_per_item || 0).toFixed(1)}
+        />
+        <CompactStat label="Items" value={stats?.total_items ?? 0} />
       </div>
 
       {showCue ? (
         <div className="stats-row">
-          <div className="stat">
-            <div className="stat-label">Cue Usage</div>
-            <div className="stat-value">{percent(stats?.cue_usage_rate)}</div>
-          </div>
-          <div className="stat">
-            <div className="stat-label">Correct After Cue</div>
-            <div className="stat-value">{stats?.correct_after_cue ?? 0}</div>
-          </div>
-          <div className="stat">
-            <div className="stat-label">Incorrect</div>
-            <div className="stat-value">{stats?.incorrect ?? 0}</div>
-          </div>
+          <CompactStat label="Cue Usage" value={percent(stats?.cue_usage_rate)} />
+          <CompactStat label="After Cue" value={stats?.correct_after_cue ?? 0} />
+          <CompactStat label="Incorrect" value={stats?.incorrect ?? 0} />
         </div>
       ) : null}
 
       {isSentence ? (
         <div className="stats-row">
-          <div className="stat">
-            <div className="stat-label">Sentence Accuracy</div>
-            <div className="stat-value">
-              {percent(stats?.lifetime_avg_sentence_accuracy)}
-            </div>
-          </div>
-          <div className="stat">
-            <div className="stat-label">Best Sentence Accuracy</div>
-            <div className="stat-value">{percent(stats?.best_sentence_accuracy)}</div>
-          </div>
-          <div className="stat">
-            <div className="stat-label">Sentence Items</div>
-            <div className="stat-value">{stats?.sentence_items_evaluated ?? 0}</div>
-          </div>
+          <CompactStat
+            label="Sentence Accuracy"
+            value={percent(stats?.lifetime_avg_sentence_accuracy)}
+          />
+          <CompactStat
+            label="Best Accuracy"
+            value={percent(stats?.best_sentence_accuracy)}
+          />
+          <CompactStat
+            label="Sentence Items"
+            value={stats?.sentence_items_evaluated ?? 0}
+          />
         </div>
       ) : null}
 
-      {!showCue && !isSentence ? (
+      {isSfa ? (
         <div className="stats-row">
-          <div className="stat">
-            <div className="stat-label">Correct First</div>
-            <div className="stat-value">{stats?.correct_first ?? 0}</div>
-          </div>
-          <div className="stat">
-            <div className="stat-label">Correct Second</div>
-            <div className="stat-value">{stats?.correct_second ?? 0}</div>
-          </div>
-          <div className="stat">
-            <div className="stat-label">Incorrect</div>
-            <div className="stat-value">{stats?.incorrect ?? 0}</div>
-          </div>
+          <CompactStat label="Correct First" value={stats?.correct_first ?? 0} />
+          <CompactStat label="Correct Second" value={stats?.correct_second ?? 0} />
+          <CompactStat label="Incorrect" value={stats?.incorrect ?? 0} />
         </div>
       ) : null}
 
       <div className="progress-note">{technique.tip}</div>
+    </div>
+  );
+}
+
+function PerTechniqueFocus({ byTechniqueAnalytics }) {
+  return (
+    <div className="progress-card">
+      <div className="progress-card-header">
+        <h2>Per-Technique Focus</h2>
+        <span className="chip">Breakdown</span>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: 18,
+          marginTop: 10,
+        }}
+      >
+        {TECHNIQUES.map((technique) => {
+          const analytics = byTechniqueAnalytics?.[technique.id] || {};
+
+          return (
+            <div
+              key={technique.id}
+              style={{
+                paddingTop: 6,
+                borderTop: "1px solid rgba(0,0,0,0.06)",
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: 16,
+                  marginBottom: 12,
+                }}
+              >
+                {sectionTitleForTechnique(technique.id)}
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                <ItemMiniList
+                  title="Needs More Practice"
+                  items={analytics?.hardest_items || []}
+                />
+                <ItemMiniList
+                  title="Most Retried"
+                  items={analytics?.most_retried_items || []}
+                />
+                {(technique.id === "image_naming" ||
+                  technique.id === "naming_with_cues") && (
+                  <ItemMiniList
+                    title="Cue Reliance"
+                    items={analytics?.most_cue_dependent_items || []}
+                  />
+                )}
+                {technique.id === "sentence_repetition" && (
+                  <ItemMiniList
+                    title="Lowest Accuracy Sentences"
+                    items={analytics?.weakest_sentence_items || []}
+                  />
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -394,6 +466,7 @@ export default function Progress() {
 
   const [selectedTechnique, setSelectedTechnique] = useState("overall");
   const [selectedMetric, setSelectedMetric] = useState("points");
+  const [showPerTechniqueFocus, setShowPerTechniqueFocus] = useState(false);
 
   const levelInfo = useMemo(
     () => computeLevel(me?.total_exp || 0),
@@ -497,6 +570,7 @@ export default function Progress() {
                     style={{ width: `${Math.round(levelInfo.progress * 100)}%` }}
                   />
                 </div>
+
                 <div className="exp-bar-label">
                   <span>
                     {levelInfo.expIntoLevel} / {levelInfo.expNeeded} EXP to next level
@@ -505,33 +579,15 @@ export default function Progress() {
                 </div>
 
                 <div className="stats-row">
-                  <div className="stat">
-                    <div className="stat-label">Total EXP</div>
-                    <div className="stat-value">{me?.total_exp ?? 0}</div>
-                  </div>
-                  <div className="stat">
-                    <div className="stat-label">Streak</div>
-                    <div className="stat-value">{me?.streak ?? 0}</div>
-                  </div>
-                  <div className="stat">
-                    <div className="stat-label">Best Daily</div>
-                    <div className="stat-value">{me?.best_daily_score ?? 0}</div>
-                  </div>
+                  <CompactStat label="Total EXP" value={me?.total_exp ?? 0} />
+                  <CompactStat label="Streak" value={me?.streak ?? 0} />
+                  <CompactStat label="Best Daily" value={me?.best_daily_score ?? 0} />
                 </div>
 
                 <div className="stats-row">
-                  <div className="stat">
-                    <div className="stat-label">Today Points</div>
-                    <div className="stat-value">{me?.today_points ?? 0}</div>
-                  </div>
-                  <div className="stat">
-                    <div className="stat-label">Today Sessions</div>
-                    <div className="stat-value">{me?.today_sessions ?? 0}</div>
-                  </div>
-                  <div className="stat">
-                    <div className="stat-label">Last Active</div>
-                    <div className="stat-value">{me?.last_active_date || "—"}</div>
-                  </div>
+                  <CompactStat label="Today Points" value={me?.today_points ?? 0} />
+                  <CompactStat label="Today Sessions" value={me?.today_sessions ?? 0} />
+                  <CompactStat label="Last Active" value={me?.last_active_date || "—"} />
                 </div>
               </div>
 
@@ -702,26 +758,46 @@ export default function Progress() {
                   </div>
 
                   <div className="progress-note" style={{ marginTop: 16 }}>
-                    Compare points, sessions, first-attempt performance, average attempts, cue usage, and sentence accuracy across the last 7 days where relevant to each technique.
+                    Use this to quickly compare your recent activity and spot changes in performance.
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="progress-grid">
-              {TECHNIQUES.map((t) => (
-                <TechniqueCard
-                  key={t.id}
-                  technique={t}
-                  stats={summary?.techniques?.[t.id] || {}}
-                />
-              ))}
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                  marginBottom: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 22 }}>Technique Overview</h2>
+                  <div className="progress-muted" style={{ marginTop: 4 }}>
+                    A compact summary of how each exercise is going.
+                  </div>
+                </div>
+              </div>
+
+              <div className="progress-grid">
+                {TECHNIQUES.map((t) => (
+                  <TechniqueCard
+                    key={t.id}
+                    technique={t}
+                    stats={summary?.techniques?.[t.id] || {}}
+                  />
+                ))}
+              </div>
             </div>
 
             <div className="progress-card">
               <div className="progress-card-header">
-                <h2>Areas to Improve</h2>
-                <span className="chip">Focused practice</span>
+                <h2>Practice Focus</h2>
+                <span className="chip">Top priorities</span>
               </div>
 
               <div
@@ -736,93 +812,47 @@ export default function Progress() {
                   title="Hardest Items"
                   subtitle="Items with the most mistakes so far."
                   items={itemAnalytics?.hardest_items || []}
+                  showTechnique={true}
                 />
                 <ItemMiniList
                   title="Most Retried"
                   subtitle="Items that usually take more attempts."
                   items={itemAnalytics?.most_retried_items || []}
-                />
-                <ItemMiniList
-                  title="Most Cue-Dependent"
-                  subtitle="Targets where cues are being relied on most."
-                  items={itemAnalytics?.most_cue_dependent_items || []}
-                />
-                <ItemMiniList
-                  title="Weakest Sentences"
-                  subtitle="Sentence targets with the lowest average accuracy."
-                  items={itemAnalytics?.weakest_sentence_items || []}
+                  showTechnique={true}
                 />
               </div>
             </div>
 
             <div className="progress-card">
               <div className="progress-card-header">
-                <h2>Per-Technique Focus</h2>
-                <span className="chip">Breakdown</span>
+                <h2>More Detail</h2>
+                <span className="chip">Optional</span>
               </div>
 
-              <div
+              <div className="progress-note" style={{ marginBottom: 14 }}>
+                Open the detailed breakdown only when you want a closer look at each technique.
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPerTechniqueFocus((prev) => !prev)}
                 style={{
-                  display: "grid",
-                  gap: 18,
-                  marginTop: 10,
+                  padding: "10px 16px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(0,0,0,0.08)",
+                  background: "#ffffff",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  fontFamily: "inherit",
                 }}
               >
-                {TECHNIQUES.map((technique) => {
-                  const analytics = byTechniqueAnalytics?.[technique.id] || {};
-
-                  return (
-                    <div
-                      key={technique.id}
-                      style={{
-                        paddingTop: 6,
-                        borderTop: "1px solid rgba(0,0,0,0.06)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontWeight: 800,
-                          fontSize: 16,
-                          marginBottom: 12,
-                        }}
-                      >
-                        {sectionTitleForTechnique(technique.id)}
-                      </div>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                          gap: 14,
-                        }}
-                      >
-                        <ItemMiniList
-                          title="Needs More Practice"
-                          items={analytics?.hardest_items || []}
-                        />
-                        <ItemMiniList
-                          title="Most Retried"
-                          items={analytics?.most_retried_items || []}
-                        />
-                        {(technique.id === "image_naming" ||
-                          technique.id === "naming_with_cues") && (
-                          <ItemMiniList
-                            title="Cue Reliance"
-                            items={analytics?.most_cue_dependent_items || []}
-                          />
-                        )}
-                        {technique.id === "sentence_repetition" && (
-                          <ItemMiniList
-                            title="Lowest Accuracy Sentences"
-                            items={analytics?.weakest_sentence_items || []}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                {showPerTechniqueFocus ? "Hide Detailed Breakdown" : "Show Detailed Breakdown"}
+              </button>
             </div>
+
+            {showPerTechniqueFocus && (
+              <PerTechniqueFocus byTechniqueAnalytics={byTechniqueAnalytics} />
+            )}
           </div>
         )}
       </SignedIn>
