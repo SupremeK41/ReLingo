@@ -1,98 +1,267 @@
-# ReLingo — Stroke Speech Recovery Web App (Mild Aphasia)
+# ReLingo -- AI-Assisted Speech Therapy for Mild Aphasia
 
-ReLingo is a web-based speech therapy support app designed to help stroke survivors with **mild aphasia** practice word retrieval and speech production through short, repeatable exercises.  
-The current prototype focuses on a core evidence-based technique: **confrontation naming** (“Say what you see”) using image prompts and speech-to-text.
+ReLingo is an **AI-assisted speech therapy application designed for
+individuals with mild aphasia**. It provides structured, personalised
+therapy exercises that users can complete **independently without
+requiring a therapist during the session**.
 
-## Features (Current)
-- **Naming practice (“Say what you see”)**: image shown → user speaks → system checks correctness
-- **Local speech-to-text** using **OpenAI Whisper (run locally)** for transcription
-- Optional (in progress): **AI feedback** (GPT) for supportive prompts and error-aware feedback
-- Backend API via **FastAPI**
-- Database via **SQLite** (Tortoise ORM)
+The system uses **Large Language Models (LLMs)** and **AI-generated
+content** to dynamically create personalised therapy material, helping
+users practise language recovery exercises tailored to their needs.
 
-## Tech Stack
-**Frontend:** React.js  
-**Backend:** Python FastAPI  
-**Database:** SQLite + Tortoise ORM  
-**Speech-to-Text:** Local Whisper (`openai-whisper`)  
-**Optional LLM:** OpenAI API (for feedback only; not required for transcription)
+This project was developed as a **solo Master's project** in Computer
+Science.
 
----
+------------------------------------------------------------------------
 
-## Project Structure
-ReLingo/
-backend/
-server.py
-models.py
-requirements.txt
-database.sqlite3 (generated locally)
-frontend/
-src/
-public/
-README.md
-.gitignore
+# Overview
 
----
+ReLingo allows users to practise clinically inspired aphasia therapy
+techniques through an interactive web application.
 
-## Setup Instructions
+The system provides:
 
-### 1) Backend (FastAPI)
-Open a terminal in the `backend/` folder.
+-   Personalised therapy exercises generated with AI
+-   Speech recognition based evaluation
+-   Progress tracking and performance analytics
+-   Adaptive content generation
+-   AI image generation for therapy stimuli
 
-#### Create and activate a virtual environment
-**Windows (CMD):**
-```bash
-python -m venv .venv
-.\.venv\Scripts\activate
+The goal is to allow individuals with mild aphasia to perform **regular
+structured therapy sessions independently**, reinforcing language
+recovery outside clinical settings.
 
-Install dependencies
+------------------------------------------------------------------------
+
+# Key Features
+
+## Personalised Therapy
+
+The system generates personalised therapy content based on the user
+profile and history.
+
+LLMs are used to create new therapy items such as:
+
+-   vocabulary targets
+-   sentences
+-   semantic prompts
+-   contextual hints
+
+This allows the therapy material to evolve with the user's progress.
+
+------------------------------------------------------------------------
+
+## Speech Evaluation
+
+Users respond verbally to therapy prompts.
+
+Speech is processed using **OpenAI Whisper**, which provides:
+
+-   speech-to-text transcription
+-   robust recognition for imperfect pronunciation
+
+The system then evaluates the response using fuzzy matching and phonetic
+comparison to determine correctness.
+
+------------------------------------------------------------------------
+
+# Therapy Techniques
+
+## Image Naming
+
+Users are shown an image and must name the object.
+
+Purpose: - lexical retrieval practice - object naming
+
+## Naming with Cues
+
+Users attempt to name an image but receive phonemic or semantic hints if
+they struggle.
+
+Purpose: - cue-assisted word retrieval
+
+## Sentence Repetition
+
+Users read or hear a sentence and repeat it.
+
+Purpose: - speech production - sentence construction - working memory
+
+## Semantic Feature Analysis (SFA)
+
+Users analyse semantic properties of an object before naming it.
+
+Purpose: - strengthen semantic networks - improve word retrieval
+
+## Action Verb Naming
+
+Users identify the **action occurring in an image**.
+
+Purpose: - verb retrieval - action recognition
+
+------------------------------------------------------------------------
+
+# AI Integration
+
+### Large Language Models
+
+Used to generate: - therapy content - vocabulary prompts - semantic
+hints - sentences
+
+### Whisper Speech Recognition
+
+Used to transcribe spoken responses and evaluate answers.
+
+### Optional AI Image Generation
+
+Images can be generated dynamically using:
+
+-   OpenAI image generation
+-   ComfyUI (local Stable Diffusion)
+
+------------------------------------------------------------------------
+
+# Technology Stack
+
+Frontend - React - Clerk authentication - Web Speech API (TTS) -
+MediaRecorder API
+
+Backend - FastAPI - Python - SQLite database - Tortoise ORM
+
+AI / ML - OpenAI API - Whisper speech recognition - ComfyUI (
+local image generation)
+
+------------------------------------------------------------------------
+
+# Installation Guide
+
+## 1. Clone the Repository
+
+git clone https://github.com/yourusername/relingo.git cd relingo
+
+------------------------------------------------------------------------
+
+# Backend Setup
+
+cd backend
+
+Create virtual environment:
+
+python -m venv venv
+
+Activate:
+
+Windows: venv`\Scripts`{=tex}`\activate`{=tex}
+
+Mac/Linux: source venv/bin/activate
+
+Install dependencies:
+
 pip install -r requirements.txt
 
-Run the backend
-python -m uvicorn server:app --reload
+------------------------------------------------------------------------
 
-2) Frontend (React)
+# Environment Variables
 
-Open a second terminal in the frontend/ folder.
+Create a `.env` file in the backend folder:
 
-Install dependencies
+OPENAI_API_KEY=your_openai_api_key IMAGE_GEN_MODE=local
+COMFYUI_URL=http://127.0.0.1:8188
+
+------------------------------------------------------------------------
+
+# Running the Backend
+
+uvicorn server:app --reload
+
+Backend runs at: http://localhost:8000
+
+------------------------------------------------------------------------
+
+# Frontend Setup
+
+cd frontend/stroke-recovery
+
 npm install
 
-Run the frontend
 npm start
 
-Environment Variables
+Frontend runs at: http://localhost:3000
 
-Create a .env file locally (do not commit it). Example:
+------------------------------------------------------------------------
 
-OPENAI_API_KEY=your_key_here
+# Setting up ComfyUI (Optional)
 
+Clone:
 
-Note: Whisper transcription is local. The OpenAI API key is only needed if using GPT feedback endpoints.
+git clone https://github.com/comfyanonymous/ComfyUI cd ComfyUI
 
-API Endpoints (Key)
+Install dependencies:
 
-POST /api/speech-to-text
-Upload audio → returns transcribed text (local Whisper)
+pip install -r requirements.txt
 
-POST /user
-Create a user (prototype)
+Download a Stable Diffusion checkpoint and place it in:
 
-GET /user
-Get all users
+ComfyUI/models/checkpoints/
 
-More endpoints (score tracking, streaks, sessions) will be added as development progresses.
+Run:
 
-Therapy Technique Implemented (Prototype)
-Confrontation Naming (Word Retrieval)
+python main.py
 
-The user is shown a picture and asked to name it aloud.
-This targets lexical retrieval and spoken word production, which are commonly affected in mild aphasia.
+ComfyUI runs on: http://127.0.0.1:8188
 
-Planned additions:
+------------------------------------------------------------------------
 
-semantic cueing (category / function prompts)
+# Therapy Content Generation
 
-phonemic cueing (first sound/letters)
+When generating therapy packs the system:
 
-session scoring + longitudinal progress tracking
+1.  Checks curated therapy image catalog
+2.  Attempts dataset match
+3.  Generates image if none exists
+
+Images are stored in:
+
+frontend/stroke-recovery/public/generated/
+
+------------------------------------------------------------------------
+
+# Progress Tracking
+
+ReLingo tracks:
+
+-   session scores
+-   attempt accuracy
+-   cue usage
+-   item difficulty
+-   progress trends
+
+------------------------------------------------------------------------
+
+# Accessibility Considerations
+
+Designed for mild aphasia users:
+
+-   simple prompts
+-   minimal cognitive load
+-   optional voice feedback
+-   repeatable exercises
+-   supportive evaluation language
+
+------------------------------------------------------------------------
+
+# Limitations
+
+-   Not a replacement for professional therapy
+-   Designed primarily for mild aphasia
+-   Speech recognition accuracy may vary
+
+------------------------------------------------------------------------
+
+# Author
+
+Karam-e-Abbas Ilyas\
+MEng Computer Science / Software Engineering\
+University of Birmingham
+
+This project explores **AI-assisted independent speech therapy tools
+using LLMs and speech recognition**.
