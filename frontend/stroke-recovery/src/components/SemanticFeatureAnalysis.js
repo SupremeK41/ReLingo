@@ -4,10 +4,18 @@ import { useAuth } from "@clerk/clerk-react";
 
 import "../App.css";
 import "./BasicSpeech.css";
+import {
+  API_BASE,
+  buildProgressDisplay,
+  isBackendNoSpeech,
+  pointsForAttempt,
+  resolveImagePath,
+  shuffleItems,
+  stopBrowserSpeech,
+} from "./therapySessionUtils";
 
 const SESSION_SIZE = 10;
 const TECHNIQUE_ID = "semantic_feature_analysis";
-const API_BASE = "http://localhost:8000";
 
 const DEFAULT_PROMPTS = [
   "What type of thing is it?",
@@ -17,61 +25,6 @@ const DEFAULT_PROMPTS = [
   "What is it related to?",
   "What actions are linked to it?",
 ];
-
-function shuffle(items) {
-  const shuffled = [...items];
-
-  for (let i = shuffled.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-
-  return shuffled;
-}
-
-function resolveImagePath(image) {
-  if (!image) return "/placeholder.jpg";
-  if (image.startsWith("/")) return image;
-
-  if (
-    image.startsWith("images/") ||
-    image.startsWith("SentenceImages/") ||
-    image.startsWith("arasaac_images/") ||
-    image.startsWith("arasaac_sentence_images/") ||
-    image.startsWith("generated/")
-  ) {
-    return `/${image}`;
-  }
-
-  return `/${image}`;
-}
-
-function pointsForAttempt(attemptNumber) {
-  if (attemptNumber === 1) return 3;
-  if (attemptNumber === 2) return 2;
-  return 1;
-}
-
-function isNoSpeech(payload) {
-  if (!payload) return false;
-
-  const text = (payload.text || "").trim();
-  if (text !== "") return false;
-
-  if (payload.too_short) return true;
-  if (typeof payload.no_speech_prob === "number" && payload.no_speech_prob >= 0.8) return true;
-  if (payload.prompt_leak) return true;
-
-  if (
-    payload.best_guess == null &&
-    payload.distance == null &&
-    payload.rel_distance == null
-  ) {
-    return true;
-  }
-
-  return false;
-}
 
 function normaliseSfaItem(item) {
   const prompts = Array.isArray(item?.feature_prompts)
@@ -179,9 +132,7 @@ export default function SemanticFeatureAnalysis() {
   }, [isMuted]);
 
   function stopSpeaking() {
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    stopBrowserSpeech();
     currentUtteranceRef.current = null;
   }
 
@@ -198,7 +149,7 @@ export default function SemanticFeatureAnalysis() {
       return;
     }
 
-    window.speechSynthesis.cancel();
+    stopSpeaking();
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.9;
@@ -230,6 +181,11 @@ export default function SemanticFeatureAnalysis() {
   useEffect(() => {
     return () => {
       stopSpeaking();
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
     };
   }, []);
 
@@ -295,7 +251,7 @@ export default function SemanticFeatureAnalysis() {
   }, [getToken]);
 
   const sessionItems = useMemo(() => {
-    const shuffled = shuffle(baseItems || []);
+    const shuffled = shuffleItems(baseItems || []);
     return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
   }, [sessionSeed, baseItems]);
 
@@ -377,7 +333,7 @@ export default function SemanticFeatureAnalysis() {
   };
 
   const handleEvaluationResult = (payload) => {
-    if (isNoSpeech(payload)) {
+    if (isBackendNoSpeech(payload)) {
       setLastEvaluation({
         transcript: "",
         best_guess: "",
@@ -503,6 +459,7 @@ export default function SemanticFeatureAnalysis() {
 
     try {
       setError(null);
+      stopSpeaking();
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -588,8 +545,9 @@ export default function SemanticFeatureAnalysis() {
   };
 
   const recordDisabled = completed || isProcessing || lockedUntilNext;
-  const progressDisplay = Math.min(
-    currentIndex + (completed ? 0 : 1),
+  const progressDisplay = buildProgressDisplay(
+    currentIndex,
+    completed,
     sessionItems.length
   );
 

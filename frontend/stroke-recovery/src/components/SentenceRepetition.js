@@ -5,10 +5,19 @@ import "./BasicSpeech.css";
 
 import { useAuth } from "@clerk/clerk-react";
 import sentenceData from "../data/sentenceProduction.json";
+import {
+  API_BASE,
+  buildProgressDisplay,
+  clearAdvanceTimeout,
+  pointsForAttempt,
+  resolveImagePath,
+  shuffleItems,
+  stopBrowserSpeech,
+} from "./therapySessionUtils";
 
 const SESSION_SIZE = 5;
 const TECHNIQUE_ID = "sentence_repetition";
-const API_BASE = "http://localhost:8000";
+const FALLBACK_ADVANCE_DELAY_MS = 1600;
 
 const DEFAULT_FUNCTION_WORDS = new Set([
   "a", "an", "the",
@@ -24,38 +33,6 @@ const DEFAULT_FUNCTION_WORDS = new Set([
   "my", "your", "his", "their", "our",
   "as", "if", "than", "then", "so", "because", "while",
 ]);
-
-function resolveImagePath(image) {
-  if (!image) return "/placeholder.jpg";
-  if (image.startsWith("/")) return image;
-
-  if (
-    image.startsWith("images/") ||
-    image.startsWith("SentenceImages/") ||
-    image.startsWith("arasaac_images/") ||
-    image.startsWith("arasaac_sentence_images/") ||
-    image.startsWith("generated/")
-  ) {
-    return `/${image}`;
-  }
-
-  return `/images/${image}`;
-}
-
-function shuffle(arr) {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-function pointsForAttempt(attemptNum) {
-  if (attemptNum === 1) return 3;
-  if (attemptNum === 2) return 2;
-  return 1;
-}
 
 function isCorrect(scoreLevel) {
   return Number(scoreLevel) >= 2;
@@ -134,6 +111,8 @@ export default function SentenceRepetition() {
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
+  const advanceTimeoutRef = useRef(null);
+  const currentUtteranceRef = useRef(null);
 
   const [sessionSeed, setSessionSeed] = useState(0);
 
@@ -150,7 +129,85 @@ export default function SentenceRepetition() {
       return false;
     }
   });
-  const lastSpokenRef = useRef("");
+
+  const stopSpeaking = () => {
+    stopBrowserSpeech();
+    currentUtteranceRef.current = null;
+  };
+
+  const speak = (text, { onEnd } = {}) => {
+    const finalText = String(text || "").trim();
+
+    if (!finalText || isMuted || !("speechSynthesis" in window)) {
+      if (typeof onEnd === "function") {
+        onEnd();
+      }
+      return;
+    }
+
+    stopSpeaking();
+
+    const utterance = new SpeechSynthesisUtterance(finalText);
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+
+    utterance.onend = () => {
+      if (currentUtteranceRef.current === utterance) {
+        currentUtteranceRef.current = null;
+      }
+      if (typeof onEnd === "function") {
+        onEnd();
+      }
+    };
+
+    utterance.onerror = () => {
+      if (currentUtteranceRef.current === utterance) {
+        currentUtteranceRef.current = null;
+      }
+      if (typeof onEnd === "function") {
+        onEnd();
+      }
+    };
+
+    currentUtteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const scheduleNextItemFallback = () => {
+    clearAdvanceTimeout(advanceTimeoutRef);
+    advanceTimeoutRef.current = setTimeout(() => {
+      nextItem();
+    }, FALLBACK_ADVANCE_DELAY_MS);
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("rel_mute_sentence", isMuted ? "1" : "0");
+    } catch {}
+  }, [isMuted]);
+
+  useEffect(() => {
+    return () => {
+      clearAdvanceTimeout(advanceTimeoutRef);
+      stopSpeaking();
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
+  const toggleMute = () => {
+    setIsMuted((m) => {
+      const next = !m;
+      if (next) {
+        stopSpeaking();
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     const loadPack = async () => {
@@ -192,43 +249,16 @@ export default function SentenceRepetition() {
   }, [getToken]);
 
   const sessionItems = useMemo(() => {
-    const shuffled = shuffle(baseItems || []);
+    const shuffled = shuffleItems(baseItems || []);
     return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
   }, [sessionSeed, baseItems]);
 
   const currentItem = sessionItems[currentIndex];
 
-  const speak = (text) => {
-    if (isMuted) return;
-    if (!text) return;
-    if (!("speechSynthesis" in window)) return;
-    if (lastSpokenRef.current === text) return;
-
-    lastSpokenRef.current = text;
-
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 0.9;
-    window.speechSynthesis.speak(u);
-  };
-
   useEffect(() => {
-    if (feedback) speak(feedback);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedback]);
+    clearAdvanceTimeout(advanceTimeoutRef);
+    stopSpeaking();
 
-  const toggleMute = () => {
-    setIsMuted((m) => {
-      const next = !m;
-      try {
-        localStorage.setItem("rel_mute_sentence", next ? "1" : "0");
-      } catch {}
-      if (next) window.speechSynthesis.cancel();
-      return next;
-    });
-  };
-
-  useEffect(() => {
     setCurrentIndex(0);
     setFeedback("");
     setAudioResult("");
@@ -238,7 +268,6 @@ export default function SentenceRepetition() {
     setLockedUntilNext(false);
     setIsRecording(false);
     setIsProcessing(false);
-    lastSpokenRef.current = "";
 
     postedSessionRef.current = false;
     setScorePostResult(null);
@@ -246,15 +275,26 @@ export default function SentenceRepetition() {
     setItemResults([]);
   }, [sessionItems]);
 
+  const resetForNextItem = (nextIndex) => {
+    clearAdvanceTimeout(advanceTimeoutRef);
+    stopSpeaking();
+
+    setCurrentIndex(nextIndex);
+    setAttemptNum(1);
+    setFeedback("");
+    setAudioResult("");
+    setLockedUntilNext(false);
+  };
+
   const nextItem = () => {
     const next = currentIndex + 1;
+
     if (next < sessionItems.length) {
-      setCurrentIndex(next);
-      setAttemptNum(1);
-      setFeedback("");
-      setAudioResult("");
-      setLockedUntilNext(false);
+      resetForNextItem(next);
     } else {
+      clearAdvanceTimeout(advanceTimeoutRef);
+      stopSpeaking();
+
       setCompleted(true);
       setFeedback("");
       setAudioResult("");
@@ -262,7 +302,7 @@ export default function SentenceRepetition() {
     }
   };
 
-  const finalizeItem = ({ awardedPoints, payload, scoreLevel }) => {
+  const finalizeItem = ({ awardedPoints, payload, scoreLevel, speechText }) => {
     const targetSentence = currentItem?.sentence || "";
 
     setSessionPoints((p) => p + awardedPoints);
@@ -284,9 +324,16 @@ export default function SentenceRepetition() {
       },
     ]);
 
-    setTimeout(() => {
-      nextItem();
-    }, 1200);
+    if (isMuted || !("speechSynthesis" in window)) {
+      scheduleNextItemFallback();
+      return;
+    }
+
+    speak(speechText, {
+      onEnd: () => {
+        nextItem();
+      },
+    });
   };
 
   const handleEvaluation = (payload) => {
@@ -294,33 +341,44 @@ export default function SentenceRepetition() {
 
     if (isCorrect(scoreLevel)) {
       const pts = pointsForAttempt(attemptNum);
-      const acc =
+      const shownPercent =
         typeof payload?.weighted_accuracy === "number"
-          ? ` (${Math.round(payload.weighted_accuracy * 100)}%)`
-          : "";
+          ? Math.round(payload.weighted_accuracy * 100)
+          : null;
 
-      setFeedback(
+      const accText = shownPercent != null ? ` (${shownPercent}%)` : "";
+      const feedbackText =
         attemptNum === 1
-          ? `Correct sentence! (+3)${acc}`
+          ? `Correct sentence! (+3)${accText}`
           : attemptNum === 2
-            ? `Correct! (+2)${acc}`
-            : `Correct! (+1)${acc}`
-      );
-      finalizeItem({ awardedPoints: pts, payload, scoreLevel });
+          ? `Correct! (+2)${accText}`
+          : `Correct! (+1)${accText}`;
+
+      const speechText =
+        shownPercent != null
+          ? `Correct sentence. You earned ${pts} point${pts === 1 ? "" : "s"}. Accuracy ${shownPercent} percent.`
+          : `Correct sentence. You earned ${pts} point${pts === 1 ? "" : "s"}.`;
+
+      setFeedback(feedbackText);
+      finalizeItem({ awardedPoints: pts, payload, scoreLevel, speechText });
       return;
     }
 
     if (attemptNum === 1) {
-      setFeedback("Not quite — try repeating the full sentence again.");
+      const message = "Not quite — try repeating the full sentence again.";
+      setFeedback(message);
       setAttemptNum(2);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
     if (attemptNum === 2) {
-      setFeedback("Still not quite — say it slowly and clearly.");
+      const message = "Still not quite — say it slowly and clearly.";
+      setFeedback(message);
       setAttemptNum(3);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
@@ -328,18 +386,27 @@ export default function SentenceRepetition() {
       payload?.exact_match
         ? 100
         : typeof payload?.weighted_accuracy === "number"
-          ? Math.round(payload.weighted_accuracy * 100)
-          : null;
+        ? Math.round(payload.weighted_accuracy * 100)
+        : null;
 
-    const acc = shownPercent != null ? ` (${shownPercent}%)` : "";
-    setFeedback(`Incorrect. (+0)${acc}`);
-    finalizeItem({ awardedPoints: 0, payload, scoreLevel });
+    const accText = shownPercent != null ? ` (${shownPercent}%)` : "";
+    const feedbackText = `Incorrect. (+0)${accText}`;
+    const speechText =
+      shownPercent != null
+        ? `Incorrect. Zero points. Accuracy ${shownPercent} percent.`
+        : "Incorrect. Zero points.";
+
+    setFeedback(feedbackText);
+    finalizeItem({ awardedPoints: 0, payload, scoreLevel, speechText });
   };
 
   const startRecording = async () => {
     if (isProcessing || completed || lockedUntilNext) return;
 
     try {
+      stopSpeaking();
+      clearAdvanceTimeout(advanceTimeoutRef);
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
@@ -368,8 +435,10 @@ export default function SentenceRepetition() {
       recorder.start();
       setIsRecording(true);
     } catch (e) {
-      setFeedback("Microphone error — please allow access and try again.");
+      const message = "Microphone error — please allow access and try again.";
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
     }
   };
 
@@ -413,8 +482,10 @@ export default function SentenceRepetition() {
       setAudioResult(data.text || "");
       handleEvaluation(data);
     } catch (e) {
-      setFeedback("Failed to process audio — try again.");
+      const message = "Failed to process audio — try again.";
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
     }
   };
 
@@ -453,9 +524,9 @@ export default function SentenceRepetition() {
   }, [completed, sessionPoints, sessionItems.length, itemResults, getToken]);
 
   const recordDisabled = completed || isProcessing || lockedUntilNext;
-
-  const progressDisplay = Math.min(
-    currentIndex + (completed ? 0 : 1),
+  const progressDisplay = buildProgressDisplay(
+    currentIndex,
+    completed,
     sessionItems.length
   );
 
@@ -542,8 +613,8 @@ export default function SentenceRepetition() {
                   {isRecording
                     ? "Stop Recording"
                     : isProcessing
-                      ? "Processing..."
-                      : "Start Recording"}
+                    ? "Processing..."
+                    : "Start Recording"}
                 </button>
               </div>
             )}

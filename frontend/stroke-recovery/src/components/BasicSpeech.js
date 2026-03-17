@@ -5,82 +5,33 @@ import { useAuth } from "@clerk/clerk-react";
 import "../App.css";
 import "./BasicSpeech.css";
 import wordPairs from "../data/wordPairs.json";
+import {
+  API_BASE,
+  buildProgressDisplay,
+  clearAdvanceTimeout,
+  isBackendNoSpeech,
+  pointsForAttempt,
+  resolveImagePath,
+  shuffleItems,
+  speakText,
+  stopBrowserSpeech,
+} from "./therapySessionUtils";
 
 const SESSION_SIZE = 10;
 const TECHNIQUE_ID = "image_naming";
-const API_BASE = "http://localhost:8000";
-
-function shuffle(items) {
-  const shuffled = [...items];
-
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-
-  return shuffled;
-}
 
 function getCue(word) {
   if (!word) return "";
-  return word[0].toUpperCase();
-}
-
-function resolveImagePath(image) {
-  if (!image) return "/placeholder.jpg";
-  if (image.startsWith("/")) return image;
-
-  if (
-    image.startsWith("images/") ||
-    image.startsWith("SentenceImages/") ||
-    image.startsWith("arasaac_images/") ||
-    image.startsWith("arasaac_sentence_images/") ||
-    image.startsWith("generated/")
-  ) {
-    return `/${image}`;
-  }
-
-  return `/images/${image}`;
-}
-
-// attempt 1 = 3 points, attempt 2 = 2 points, attempt 3 = 1 point
-function pointsForAttempt(attemptNumber) {
-  if (attemptNumber === 1) return 3;
-  if (attemptNumber === 2) return 2;
-  return 1;
-}
-
-// Matches the backend no-speech checks so empty/invalid audio does not use up an attempt
-function isNoSpeech(payload) {
-  if (!payload) return false;
-
-  const text = (payload.text || "").trim();
-  if (text !== "") return false;
-
-  if (payload.too_short) return true;
-  if (typeof payload.no_speech_prob === "number" && payload.no_speech_prob >= 0.8) return true;
-  if (payload.prompt_leak) return true;
-
-  if (
-    payload.best_guess == null &&
-    payload.distance == null &&
-    payload.rel_distance == null
-  ) {
-    return true;
-  }
-
-  return false;
+  return String(word).trim()[0]?.toUpperCase() || "";
 }
 
 export default function BasicSpeech() {
   const { getToken } = useAuth();
 
-  // Content source
-  const [contentSource, setContentSource] = useState("local"); // "pack" | "local"
+  const [contentSource, setContentSource] = useState("local");
   const [baseItems, setBaseItems] = useState(wordPairs);
   const [packError, setPackError] = useState(null);
 
-  // Session state
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lockedUntilNext, setLockedUntilNext] = useState(false);
@@ -108,8 +59,9 @@ export default function BasicSpeech() {
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
   const postedSessionRef = useRef(false);
+  const advanceTimeoutRef = useRef(null);
+  const currentUtteranceRef = useRef(null);
 
-  // Voice mute / TTS
   const [isMuted, setIsMuted] = useState(() => {
     try {
       return localStorage.getItem("relingo_muted") === "1";
@@ -124,40 +76,61 @@ export default function BasicSpeech() {
     } catch {}
   }, [isMuted]);
 
+  function stopSpeaking() {
+    stopBrowserSpeech();
+    currentUtteranceRef.current = null;
+  }
+
+  function speak(text, options = {}) {
+    let utteranceRef = null;
+
+    utteranceRef = speakText(text, {
+      muted: isMuted,
+      onEnd: () => {
+        if (currentUtteranceRef.current === utteranceRef) {
+          currentUtteranceRef.current = null;
+        }
+        if (typeof options.onEnd === "function") {
+          options.onEnd();
+        }
+      },
+      onError: () => {
+        if (currentUtteranceRef.current === utteranceRef) {
+          currentUtteranceRef.current = null;
+        }
+        if (typeof options.onEnd === "function") {
+          options.onEnd();
+        }
+      },
+    });
+
+    currentUtteranceRef.current = utteranceRef;
+  }
+
+  useEffect(() => {
+    return () => {
+      clearAdvanceTimeout(advanceTimeoutRef);
+      stopSpeaking();
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
   const toggleMute = () => {
     setIsMuted((current) => {
       const next = !current;
 
-      if (next && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
+      if (next) {
+        stopSpeaking();
       }
 
       return next;
     });
   };
 
-  function speak(text) {
-    if (isMuted) return;
-    if (!text) return;
-    if (!("speechSynthesis" in window)) return;
-
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.9;
-    utterance.pitch = 1;
-    utterance.volume = 1;
-
-    window.speechSynthesis.speak(utterance);
-  }
-
-  useEffect(() => {
-    if (!feedback) return;
-    speak(feedback);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedback]);
-
-  // Load personalised pack if the user has one
   useEffect(() => {
     const loadPack = async () => {
       setPackError(null);
@@ -211,16 +184,17 @@ export default function BasicSpeech() {
     loadPack();
   }, [getToken]);
 
-  // Build the current session from whichever source is active
   const sessionWords = useMemo(() => {
-    const shuffled = shuffle(baseItems || []);
+    const shuffled = shuffleItems(baseItems || []);
     return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
   }, [sessionSeed, baseItems]);
 
   const currentItem = sessionWords[currentIndex];
 
-  // Reset session state whenever the session word list changes
   useEffect(() => {
+    clearAdvanceTimeout(advanceTimeoutRef);
+    stopSpeaking();
+
     setCurrentIndex(0);
     setFeedback("");
     setAudioResult("");
@@ -240,6 +214,9 @@ export default function BasicSpeech() {
   }, [sessionWords]);
 
   const resetForNextItem = (nextIndex) => {
+    clearAdvanceTimeout(advanceTimeoutRef);
+    stopSpeaking();
+
     setCurrentIndex(nextIndex);
     setFeedback("");
     setAudioResult("");
@@ -255,6 +232,8 @@ export default function BasicSpeech() {
     if (nextIndex < sessionWords.length) {
       resetForNextItem(nextIndex);
     } else {
+      clearAdvanceTimeout(advanceTimeoutRef);
+      stopSpeaking();
       setCompleted(true);
       setFeedback("");
       setAudioResult("");
@@ -262,7 +241,7 @@ export default function BasicSpeech() {
     }
   };
 
-  const finalizeCurrentItem = ({ awardedPoints, payload }) => {
+  const finalizeCurrentItem = ({ awardedPoints, payload, speechText }) => {
     const target = currentItem?.word || "";
 
     setSessionPoints((points) => points + awardedPoints);
@@ -280,58 +259,84 @@ export default function BasicSpeech() {
       },
     ]);
 
-    setTimeout(() => {
-      nextItem();
-    }, 1200);
+    speak(speechText, {
+      onEnd: () => {
+        nextItem();
+      },
+    });
   };
 
   const handleEvaluationResult = (payload) => {
-    if (isNoSpeech(payload)) {
-      setFeedback("Didn’t catch that—try speaking a bit longer.");
+    if (isBackendNoSpeech(payload)) {
+      const message = "Didn’t catch that—try speaking a bit longer.";
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
     const matched = !!payload?.matched;
+    const targetWord = currentItem?.word || "";
 
     if (matched) {
       const points = pointsForAttempt(attemptNum);
-
-      setFeedback(
+      const feedbackText =
         attemptNum === 1
           ? "Correct! (+3)"
           : attemptNum === 2
           ? "Correct! (+2)"
-          : "Correct after cue! (+1)"
-      );
+          : "Correct after cue! (+1)";
+
+      const speechText =
+        targetWord && points > 0
+          ? `Correct. The word is ${targetWord}. You earned ${points} point${
+              points === 1 ? "" : "s"
+            }.`
+          : `Correct. You earned ${points} point${points === 1 ? "" : "s"}.`;
+
+      setFeedback(feedbackText);
 
       finalizeCurrentItem({
         awardedPoints: points,
         payload,
+        speechText,
       });
       return;
     }
 
     if (attemptNum === 1) {
-      setFeedback("Incorrect — here’s a cue. Try again.");
       setShowCue(true);
       setAttemptNum(2);
+
+      const message = "Incorrect — here’s a cue. Try again.";
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
     if (attemptNum === 2) {
-      setFeedback("Still not quite — use the cue and try once more.");
       setShowCue(true);
       setAttemptNum(3);
+
+      const message = "Still not quite — use the cue and try once more.";
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
-    setFeedback("Incorrect. (+0)");
+    const feedbackText = "Incorrect. (+0)";
+    const speechText = targetWord
+      ? `Moving on. The correct word is ${targetWord}. Zero points for this one.`
+      : "Moving on. Zero points for this one.";
+
+    setFeedback(feedbackText);
+
     finalizeCurrentItem({
       awardedPoints: 0,
       payload,
+      speechText,
     });
   };
 
@@ -374,6 +379,8 @@ export default function BasicSpeech() {
 
     try {
       setError(null);
+      stopSpeaking();
+      clearAdvanceTimeout(advanceTimeoutRef);
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -416,7 +423,6 @@ export default function BasicSpeech() {
     }
   };
 
-  // Submit session score once the session is complete
   useEffect(() => {
     const postSessionScore = async () => {
       try {
@@ -460,8 +466,9 @@ export default function BasicSpeech() {
   };
 
   const recordDisabled = completed || isProcessing || lockedUntilNext;
-  const progressDisplay = Math.min(
-    currentIndex + (completed ? 0 : 1),
+  const progressDisplay = buildProgressDisplay(
+    currentIndex,
+    completed,
     sessionWords.length
   );
   const cueLetter = !completed && currentItem ? getCue(currentItem.word) : "";

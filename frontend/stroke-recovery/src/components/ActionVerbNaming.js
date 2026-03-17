@@ -1,73 +1,27 @@
+// frontend/src/components/ActionVerbNaming.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 
 import "../App.css";
 import "./BasicSpeech.css";
+import {
+  API_BASE,
+  buildProgressDisplay,
+  clearAdvanceTimeout,
+  isBackendNoSpeech,
+  pointsForAttempt,
+  resolveImagePath,
+  shuffleItems,
+  stopBrowserSpeech,
+} from "./therapySessionUtils";
 
 const SESSION_SIZE = 10;
 const TECHNIQUE_ID = "action_verb_naming";
-const API_BASE = "http://localhost:8000";
-
-function shuffle(items) {
-  const shuffled = [...items];
-
-  for (let i = shuffled.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-
-  return shuffled;
-}
+const FALLBACK_ADVANCE_DELAY_MS = 1600;
 
 function getCueFromVerb(verb) {
   if (!verb) return "";
   return String(verb).trim()[0]?.toUpperCase() || "";
-}
-
-function resolveImagePath(image) {
-  if (!image) return "/placeholder.jpg";
-  if (image.startsWith("/")) return image;
-
-  if (
-    image.startsWith("images/") ||
-    image.startsWith("SentenceImages/") ||
-    image.startsWith("arasaac_images/") ||
-    image.startsWith("arasaac_sentence_images/") ||
-    image.startsWith("generated/")
-  ) {
-    return `/${image}`;
-  }
-
-  return `/${image}`;
-}
-
-function pointsForAttempt(attemptNumber) {
-  if (attemptNumber === 1) return 3;
-  if (attemptNumber === 2) return 2;
-  return 1;
-}
-
-function isNoSpeech(payload) {
-  if (!payload) return false;
-
-  const text = (payload.text || "").trim();
-  if (text !== "") return false;
-
-  if (payload.too_short) return true;
-  if (typeof payload.no_speech_prob === "number" && payload.no_speech_prob >= 0.8) {
-    return true;
-  }
-  if (payload.prompt_leak) return true;
-
-  if (
-    payload.best_guess == null &&
-    payload.distance == null &&
-    payload.rel_distance == null
-  ) {
-    return true;
-  }
-
-  return false;
 }
 
 function normaliseActionVerbItem(item) {
@@ -137,6 +91,7 @@ export default function ActionVerbNaming() {
   const streamRef = useRef(null);
   const postedSessionRef = useRef(false);
   const advanceTimeoutRef = useRef(null);
+  const currentUtteranceRef = useRef(null);
 
   const [isMuted, setIsMuted] = useState(() => {
     try {
@@ -152,34 +107,69 @@ export default function ActionVerbNaming() {
     } catch {}
   }, [isMuted]);
 
-  function speak(text) {
-    if (isMuted) return;
-    if (!text) return;
-    if (!("speechSynthesis" in window)) return;
+  function stopSpeaking() {
+    stopBrowserSpeech();
+    currentUtteranceRef.current = null;
+  }
 
-    window.speechSynthesis.cancel();
+  function speak(text, options = {}) {
+    const { onEnd } = options;
+    const finalText = String(text || "").trim();
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    if (!finalText) {
+      if (typeof onEnd === "function") onEnd();
+      return;
+    }
+
+    if (isMuted || !("speechSynthesis" in window)) {
+      if (typeof onEnd === "function") onEnd();
+      return;
+    }
+
+    stopSpeaking();
+
+    const utterance = new SpeechSynthesisUtterance(finalText);
     utterance.rate = 0.9;
     utterance.pitch = 1;
     utterance.volume = 1;
 
+    utterance.onend = () => {
+      if (currentUtteranceRef.current === utterance) {
+        currentUtteranceRef.current = null;
+      }
+      if (typeof onEnd === "function") {
+        onEnd();
+      }
+    };
+
+    utterance.onerror = () => {
+      if (currentUtteranceRef.current === utterance) {
+        currentUtteranceRef.current = null;
+      }
+      if (typeof onEnd === "function") {
+        onEnd();
+      }
+    };
+
+    currentUtteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
   }
 
-  useEffect(() => {
-    if (!feedback) return;
-    speak(feedback);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedback]);
+  const scheduleNextItemFallback = () => {
+    clearAdvanceTimeout(advanceTimeoutRef);
+    advanceTimeoutRef.current = setTimeout(() => {
+      nextItem();
+    }, FALLBACK_ADVANCE_DELAY_MS);
+  };
 
   useEffect(() => {
     return () => {
-      if (advanceTimeoutRef.current) {
-        clearTimeout(advanceTimeoutRef.current);
-      }
-      if ("speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
+      clearAdvanceTimeout(advanceTimeoutRef);
+      stopSpeaking();
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
       }
     };
   }, []);
@@ -188,8 +178,8 @@ export default function ActionVerbNaming() {
     setIsMuted((current) => {
       const next = !current;
 
-      if (next && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
+      if (next) {
+        stopSpeaking();
       }
 
       return next;
@@ -247,17 +237,15 @@ export default function ActionVerbNaming() {
   }, [getToken]);
 
   const sessionItems = useMemo(() => {
-    const shuffled = shuffle(baseItems || []);
+    const shuffled = shuffleItems(baseItems || []);
     return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
   }, [sessionSeed, baseItems]);
 
   const currentItem = sessionItems[currentIndex];
 
   useEffect(() => {
-    if (advanceTimeoutRef.current) {
-      clearTimeout(advanceTimeoutRef.current);
-      advanceTimeoutRef.current = null;
-    }
+    clearAdvanceTimeout(advanceTimeoutRef);
+    stopSpeaking();
 
     setCurrentIndex(0);
     setFeedback("");
@@ -278,10 +266,8 @@ export default function ActionVerbNaming() {
   }, [sessionItems]);
 
   const resetForNextItem = (nextIndex) => {
-    if (advanceTimeoutRef.current) {
-      clearTimeout(advanceTimeoutRef.current);
-      advanceTimeoutRef.current = null;
-    }
+    clearAdvanceTimeout(advanceTimeoutRef);
+    stopSpeaking();
 
     setCurrentIndex(nextIndex);
     setFeedback("");
@@ -298,6 +284,9 @@ export default function ActionVerbNaming() {
     if (nextIndex < sessionItems.length) {
       resetForNextItem(nextIndex);
     } else {
+      clearAdvanceTimeout(advanceTimeoutRef);
+      stopSpeaking();
+
       setCompleted(true);
       setFeedback("");
       setAudioResult("");
@@ -305,7 +294,7 @@ export default function ActionVerbNaming() {
     }
   };
 
-  const finalizeCurrentItem = ({ awardedPoints, payload }) => {
+  const finalizeCurrentItem = ({ awardedPoints, payload, speechText }) => {
     const target = currentItem?.verb || "";
 
     setSessionPoints((points) => points + awardedPoints);
@@ -323,19 +312,24 @@ export default function ActionVerbNaming() {
       },
     ]);
 
-    if (advanceTimeoutRef.current) {
-      clearTimeout(advanceTimeoutRef.current);
+    if (isMuted || !("speechSynthesis" in window)) {
+      scheduleNextItemFallback();
+      return;
     }
 
-    advanceTimeoutRef.current = setTimeout(() => {
-      nextItem();
-    }, 1400);
+    speak(speechText, {
+      onEnd: () => {
+        nextItem();
+      },
+    });
   };
 
   const handleEvaluationResult = (payload) => {
-    if (isNoSpeech(payload)) {
-      setFeedback("Didn’t catch that—try saying the action a bit more clearly.");
+    if (isBackendNoSpeech(payload)) {
+      const message = "Didn’t catch that—try saying the action a bit more clearly.";
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
@@ -344,18 +338,19 @@ export default function ActionVerbNaming() {
 
     if (matched) {
       const points = pointsForAttempt(attemptNum);
+      const feedbackText = `Correct! (+${points})`;
 
-      setFeedback(
-        attemptNum === 1
-          ? `Correct: ${correctVerb}. Plus 3 points.`
-          : attemptNum === 2
-          ? `Correct: ${correctVerb}. Plus 2 points.`
-          : `Correct: ${correctVerb}. Plus 1 point.`
-      );
+
+      const speechText = correctVerb
+        ? `Correct. The action is ${correctVerb}. You earned ${points} point${points === 1 ? "" : "s"}.`
+        : `Correct. You earned ${points} point${points === 1 ? "" : "s"}.`;
+
+      setFeedback(feedbackText);
 
       finalizeCurrentItem({
         awardedPoints: points,
         payload,
+        speechText,
       });
       return;
     }
@@ -363,24 +358,36 @@ export default function ActionVerbNaming() {
     if (attemptNum === 1) {
       setShowHint(true);
       setAttemptNum(2);
-      setFeedback("Good try. Here is a hint to help you.");
+
+      const message = "Good try. Here is a hint to help you.";
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
     if (attemptNum === 2) {
       setAttemptNum(3);
-      setFeedback("Try once more using the picture and the hint.");
+
+      const message = "Try once more using the picture and the hint.";
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
     const reveal = correctVerb ? ` The action was: ${correctVerb}.` : "";
-    setFeedback(`Moving on. Zero points for this one.${reveal}`);
+    const feedbackText = `Moving on. Zero points for this one.${reveal}`;
+    const speechText = correctVerb
+      ? `Moving on. Zero points for this one. The correct action was ${correctVerb}.`
+      : "Moving on. Zero points for this one.";
+
+    setFeedback(feedbackText);
 
     finalizeCurrentItem({
       awardedPoints: 0,
       payload,
+      speechText,
     });
   };
 
@@ -439,6 +446,8 @@ export default function ActionVerbNaming() {
 
     try {
       setError(null);
+      stopSpeaking();
+      clearAdvanceTimeout(advanceTimeoutRef);
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -524,8 +533,9 @@ export default function ActionVerbNaming() {
   };
 
   const recordDisabled = completed || isProcessing || lockedUntilNext;
-  const progressDisplay = Math.min(
-    currentIndex + (completed ? 0 : 1),
+  const progressDisplay = buildProgressDisplay(
+    currentIndex,
+    completed,
     sessionItems.length
   );
   const cueLetter = !completed && currentItem ? getCueFromVerb(currentItem.verb) : "";

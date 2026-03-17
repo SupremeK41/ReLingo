@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { SignedIn, SignedOut, useAuth } from "@clerk/clerk-react";
 import "./Progress.css";
 
+const API_BASE = "http://localhost:8000";
+
 const TECHNIQUES = [
   {
     id: "image_naming",
@@ -174,9 +176,11 @@ function formatMetricValue(metricId, value) {
   ) {
     return percent(value);
   }
+
   if (metricId === "avg_attempts_per_item") {
     return Number(value || 0).toFixed(1);
   }
+
   return String(value || 0);
 }
 
@@ -230,6 +234,7 @@ function EvaluationSection({ title, items = [], emptyText = "No insight yet." })
       }}
     >
       <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>{title}</div>
+
       {!items.length ? (
         <div style={{ fontSize: 14, opacity: 0.65 }}>{emptyText}</div>
       ) : (
@@ -829,7 +834,7 @@ export default function Progress() {
           "Content-Type": "application/json",
         };
 
-        const res = await fetch("http://localhost:8000/api/progress/ai-evaluation", {
+        const res = await fetch(`${API_BASE}/api/progress/ai-evaluation`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -882,12 +887,12 @@ export default function Progress() {
 
         const headers = { Authorization: `Bearer ${token}` };
 
-        const meRes = await fetch("http://localhost:8000/api/me", { headers });
+        const meRes = await fetch(`${API_BASE}/api/me`, { headers });
         const meData = await meRes.json();
         if (!meRes.ok) throw new Error(meData?.detail || "Failed to load /api/me");
         setMe(meData);
 
-        const summaryRes = await fetch("http://localhost:8000/api/progress/summary", {
+        const summaryRes = await fetch(`${API_BASE}/api/progress/summary`, {
           headers,
         });
         const summaryData = await summaryRes.json();

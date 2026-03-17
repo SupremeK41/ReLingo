@@ -5,65 +5,20 @@ import { useAuth } from "@clerk/clerk-react";
 import "../App.css";
 import "./BasicSpeech.css";
 import wordPairs from "../data/wordPairs.json";
+import {
+  API_BASE,
+  buildProgressDisplay,
+  clearAdvanceTimeout,
+  isBackendNoSpeech,
+  pointsForAttempt,
+  resolveImagePath,
+  shuffleItems,
+  stopBrowserSpeech,
+} from "./therapySessionUtils";
 
 const SESSION_SIZE = 10;
 const TECHNIQUE_ID = "naming_with_cues";
-const API_BASE = "http://localhost:8000";
-
-function shuffle(items) {
-  const shuffled = [...items];
-
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-
-  return shuffled;
-}
-
-function resolveImagePath(image) {
-  if (!image) return "/placeholder.jpg";
-  if (image.startsWith("/")) return image;
-
-  if (
-    image.startsWith("images/") ||
-    image.startsWith("SentenceImages/") ||
-    image.startsWith("arasaac_images/") ||
-    image.startsWith("arasaac_sentence_images/") ||
-    image.startsWith("generated/")
-  ) {
-    return `/${image}`;
-  }
-
-  return `/images/${image}`;
-}
-
-function pointsForAttempt(attemptNumber) {
-  if (attemptNumber === 1) return 3;
-  if (attemptNumber === 2) return 2;
-  return 1;
-}
-
-function isNoSpeech(payload) {
-  if (!payload) return false;
-
-  const text = (payload.text || "").trim();
-  if (text !== "") return false;
-
-  if (payload.too_short) return true;
-  if (typeof payload.no_speech_prob === "number" && payload.no_speech_prob >= 0.8) return true;
-  if (payload.prompt_leak) return true;
-
-  if (
-    payload.best_guess == null &&
-    payload.distance == null &&
-    payload.rel_distance == null
-  ) {
-    return true;
-  }
-
-  return false;
-}
+const FALLBACK_ADVANCE_DELAY_MS = 1600;
 
 function normaliseFallbackItem(item) {
   const word = String(item?.word || "").trim();
@@ -113,6 +68,8 @@ export default function NamingWithCues() {
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
   const postedSessionRef = useRef(false);
+  const advanceTimeoutRef = useRef(null);
+  const currentUtteranceRef = useRef(null);
 
   const [isMuted, setIsMuted] = useState(() => {
     try {
@@ -128,33 +85,75 @@ export default function NamingWithCues() {
     } catch {}
   }, [isMuted]);
 
-  function speak(text) {
-    if (isMuted) return;
-    if (!text) return;
-    if (!("speechSynthesis" in window)) return;
+  const stopSpeaking = () => {
+    stopBrowserSpeech();
+    currentUtteranceRef.current = null;
+  };
 
-    window.speechSynthesis.cancel();
+  const speak = (text, { onEnd } = {}) => {
+    const finalText = String(text || "").trim();
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    if (!finalText || isMuted || !("speechSynthesis" in window)) {
+      if (typeof onEnd === "function") {
+        onEnd();
+      }
+      return;
+    }
+
+    stopSpeaking();
+
+    const utterance = new SpeechSynthesisUtterance(finalText);
     utterance.rate = 0.9;
     utterance.pitch = 1;
     utterance.volume = 1;
 
+    utterance.onend = () => {
+      if (currentUtteranceRef.current === utterance) {
+        currentUtteranceRef.current = null;
+      }
+      if (typeof onEnd === "function") {
+        onEnd();
+      }
+    };
+
+    utterance.onerror = () => {
+      if (currentUtteranceRef.current === utterance) {
+        currentUtteranceRef.current = null;
+      }
+      if (typeof onEnd === "function") {
+        onEnd();
+      }
+    };
+
+    currentUtteranceRef.current = utterance;
     window.speechSynthesis.speak(utterance);
-  }
+  };
+
+  const scheduleNextItemFallback = () => {
+    clearAdvanceTimeout(advanceTimeoutRef);
+    advanceTimeoutRef.current = setTimeout(() => {
+      nextItem();
+    }, FALLBACK_ADVANCE_DELAY_MS);
+  };
 
   useEffect(() => {
-    if (!feedback) return;
-    speak(feedback);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedback]);
+    return () => {
+      clearAdvanceTimeout(advanceTimeoutRef);
+      stopSpeaking();
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
 
   const toggleMute = () => {
     setIsMuted((current) => {
       const next = !current;
 
-      if (next && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
+      if (next) {
+        stopSpeaking();
       }
 
       return next;
@@ -229,13 +228,16 @@ export default function NamingWithCues() {
   }, [getToken]);
 
   const sessionWords = useMemo(() => {
-    const shuffled = shuffle(baseItems || []);
+    const shuffled = shuffleItems(baseItems || []);
     return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
   }, [sessionSeed, baseItems]);
 
   const currentItem = sessionWords[currentIndex];
 
   useEffect(() => {
+    clearAdvanceTimeout(advanceTimeoutRef);
+    stopSpeaking();
+
     setCurrentIndex(0);
     setFeedback("");
     setAudioResult("");
@@ -255,6 +257,9 @@ export default function NamingWithCues() {
   }, [sessionWords]);
 
   const resetForNextItem = (nextIndex) => {
+    clearAdvanceTimeout(advanceTimeoutRef);
+    stopSpeaking();
+
     setCurrentIndex(nextIndex);
     setFeedback("");
     setAudioResult("");
@@ -270,6 +275,9 @@ export default function NamingWithCues() {
     if (nextIndex < sessionWords.length) {
       resetForNextItem(nextIndex);
     } else {
+      clearAdvanceTimeout(advanceTimeoutRef);
+      stopSpeaking();
+
       setCompleted(true);
       setFeedback("");
       setAudioResult("");
@@ -277,7 +285,7 @@ export default function NamingWithCues() {
     }
   };
 
-  const finalizeCurrentItem = ({ awardedPoints, payload }) => {
+  const finalizeCurrentItem = ({ awardedPoints, payload, speechText }) => {
     const target = currentItem?.word || "";
 
     setSessionPoints((points) => points + awardedPoints);
@@ -295,63 +303,87 @@ export default function NamingWithCues() {
       },
     ]);
 
-    setTimeout(() => {
-      nextItem();
-    }, 1200);
+    if (isMuted || !("speechSynthesis" in window)) {
+      scheduleNextItemFallback();
+      return;
+    }
+
+    speak(speechText, {
+      onEnd: () => {
+        nextItem();
+      },
+    });
   };
 
   const handleEvaluationResult = (payload) => {
-    if (isNoSpeech(payload)) {
-      setFeedback("Didn’t catch that. Try speaking a bit longer.");
+    if (isBackendNoSpeech(payload)) {
+      const message = "Didn’t catch that. Try speaking a bit longer.";
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
     const matched = !!payload?.matched;
+    const answerWord = currentItem?.full_cue || currentItem?.word || "";
 
     if (matched) {
       const points = pointsForAttempt(attemptNum);
 
-      setFeedback(
-        attemptNum === 1
-          ? "Correct independently. Plus 3 points."
-          : attemptNum === 2
-          ? "Correct after the semantic cue. Plus 2 points."
-          : "Correct after the phonemic cue. Plus 1 point."
-      );
+      const feedbackText = `Correct! (+${points})`;
+
+      const speechText =
+        answerWord
+          ? `Correct. The word is ${answerWord}. You earned ${points} point${
+              points === 1 ? "" : "s"
+            }.`
+          : `Correct. You earned ${points} point${points === 1 ? "" : "s"}.`;
+
+      setFeedback(feedbackText);
 
       finalizeCurrentItem({
         awardedPoints: points,
         payload,
+        speechText,
       });
       return;
     }
 
     if (attemptNum === 1) {
       const semanticCue = currentItem?.semantic_cue || "Here is a semantic cue.";
+      const message = `Not quite. Here is your semantic cue: ${semanticCue}`;
       setCueLevel(1);
       setAttemptNum(2);
-      setFeedback(`Not quite. Here is your semantic cue: ${semanticCue}`);
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
     if (attemptNum === 2) {
       const phonemicCue = currentItem?.phonemic_cue || "Here is a phonemic cue.";
+      const message = `Still not quite. Here is your phonemic cue: ${phonemicCue}`;
       setCueLevel(2);
       setAttemptNum(3);
-      setFeedback(`Still not quite. Here is your phonemic cue: ${phonemicCue}`);
+      setFeedback(message);
       setLockedUntilNext(false);
+      speak(message);
       return;
     }
 
     setCueLevel(3);
-    setFeedback(
-      `The word is ${currentItem?.full_cue || currentItem?.word || ""}. Zero points for this one.`
-    );
+
+    const feedbackText = `The word is ${answerWord}. Zero points for this one.`;
+    const speechText = answerWord
+      ? `The correct word is ${answerWord}. Zero points for this one.`
+      : "Zero points for this one.";
+
+    setFeedback(feedbackText);
+
     finalizeCurrentItem({
       awardedPoints: 0,
       payload,
+      speechText,
     });
   };
 
@@ -394,6 +426,8 @@ export default function NamingWithCues() {
 
     try {
       setError(null);
+      stopSpeaking();
+      clearAdvanceTimeout(advanceTimeoutRef);
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -478,8 +512,9 @@ export default function NamingWithCues() {
   };
 
   const recordDisabled = completed || isProcessing || lockedUntilNext;
-  const progressDisplay = Math.min(
-    currentIndex + (completed ? 0 : 1),
+  const progressDisplay = buildProgressDisplay(
+    currentIndex,
+    completed,
     sessionWords.length
   );
 
