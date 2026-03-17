@@ -1,70 +1,267 @@
-# Getting Started with Create React App
+# ReLingo -- AI-Assisted Speech Therapy for Mild Aphasia
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+ReLingo is an **AI-assisted speech therapy application designed for
+individuals with mild aphasia**. It provides structured, personalised
+therapy exercises that users can complete **independently without
+requiring a therapist during the session**.
 
-## Available Scripts
+The system uses **Large Language Models (LLMs)** and **AI-generated
+content** to dynamically create personalised therapy material, helping
+users practise language recovery exercises tailored to their needs.
 
-In the project directory, you can run:
+This project was developed as a **solo Master's project** in Computer
+Science.
 
-### `npm start`
+------------------------------------------------------------------------
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+# Overview
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+ReLingo allows users to practise clinically inspired aphasia therapy
+techniques through an interactive web application.
 
-### `npm test`
+The system provides:
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+-   Personalised therapy exercises generated with AI
+-   Speech recognition based evaluation
+-   Progress tracking and performance analytics
+-   Adaptive content generation
+-   AI image generation for therapy stimuli
 
-### `npm run build`
+The goal is to allow individuals with mild aphasia to perform **regular
+structured therapy sessions independently**, reinforcing language
+recovery outside clinical settings.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+------------------------------------------------------------------------
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+# Key Features
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Personalised Therapy
 
-### `npm run eject`
+The system generates personalised therapy content based on the user
+profile and history.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+LLMs are used to create new therapy items such as:
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+-   vocabulary targets
+-   sentences
+-   semantic prompts
+-   contextual hints
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+This allows the therapy material to evolve with the user's progress.
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+------------------------------------------------------------------------
 
-## Learn More
+## Speech Evaluation
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+Users respond verbally to therapy prompts.
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+Speech is processed using **OpenAI Whisper**, which provides:
 
-### Code Splitting
+-   speech-to-text transcription
+-   robust recognition for imperfect pronunciation
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+The system then evaluates the response using fuzzy matching and phonetic
+comparison to determine correctness.
 
-### Analyzing the Bundle Size
+------------------------------------------------------------------------
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+# Therapy Techniques
 
-### Making a Progressive Web App
+## Image Naming
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+Users are shown an image and must name the object.
 
-### Advanced Configuration
+Purpose: - lexical retrieval practice - object naming
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## Naming with Cues
 
-### Deployment
+Users attempt to name an image but receive phonemic or semantic hints if
+they struggle.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+Purpose: - cue-assisted word retrieval
 
-### `npm run build` fails to minify
+## Sentence Repetition
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Users read or hear a sentence and repeat it.
+
+Purpose: - speech production - sentence construction - working memory
+
+## Semantic Feature Analysis (SFA)
+
+Users analyse semantic properties of an object before naming it.
+
+Purpose: - strengthen semantic networks - improve word retrieval
+
+## Action Verb Naming
+
+Users identify the **action occurring in an image**.
+
+Purpose: - verb retrieval - action recognition
+
+------------------------------------------------------------------------
+
+# AI Integration
+
+### Large Language Models
+
+Used to generate: - therapy content - vocabulary prompts - semantic
+hints - sentences
+
+### Whisper Speech Recognition
+
+Used to transcribe spoken responses and evaluate answers.
+
+### Optional AI Image Generation
+
+Images can be generated dynamically using:
+
+-   OpenAI image generation
+-   ComfyUI (local Stable Diffusion)
+
+------------------------------------------------------------------------
+
+# Technology Stack
+
+Frontend - React - Clerk authentication - Web Speech API (TTS) -
+MediaRecorder API
+
+Backend - FastAPI - Python - SQLite database - Tortoise ORM
+
+AI / ML - OpenAI API - Whisper speech recognition - ComfyUI (
+local image generation)
+
+------------------------------------------------------------------------
+
+# Installation Guide
+
+## 1. Clone the Repository
+
+git clone https://github.com/yourusername/relingo.git cd relingo
+
+------------------------------------------------------------------------
+
+# Backend Setup
+
+cd backend
+
+Create virtual environment:
+
+python -m venv venv
+
+Activate:
+
+Windows: venv`\Scripts`{=tex}`\activate`{=tex}
+
+Mac/Linux: source venv/bin/activate
+
+Install dependencies:
+
+pip install -r requirements.txt
+
+------------------------------------------------------------------------
+
+# Environment Variables
+
+Create a `.env` file in the backend folder:
+
+OPENAI_API_KEY=your_openai_api_key IMAGE_GEN_MODE=local
+COMFYUI_URL=http://127.0.0.1:8188
+
+------------------------------------------------------------------------
+
+# Running the Backend
+
+uvicorn server:app --reload
+
+Backend runs at: http://localhost:8000
+
+------------------------------------------------------------------------
+
+# Frontend Setup
+
+cd frontend/stroke-recovery
+
+npm install
+
+npm start
+
+Frontend runs at: http://localhost:3000
+
+------------------------------------------------------------------------
+
+# Setting up ComfyUI (Optional)
+
+Clone:
+
+git clone https://github.com/comfyanonymous/ComfyUI cd ComfyUI
+
+Install dependencies:
+
+pip install -r requirements.txt
+
+Download a Stable Diffusion checkpoint and place it in:
+
+ComfyUI/models/checkpoints/
+
+Run:
+
+python main.py
+
+ComfyUI runs on: http://127.0.0.1:8188
+
+------------------------------------------------------------------------
+
+# Therapy Content Generation
+
+When generating therapy packs the system:
+
+1.  Checks curated therapy image catalog
+2.  Attempts dataset match
+3.  Generates image if none exists
+
+Images are stored in:
+
+frontend/stroke-recovery/public/generated/
+
+------------------------------------------------------------------------
+
+# Progress Tracking
+
+ReLingo tracks:
+
+-   session scores
+-   attempt accuracy
+-   cue usage
+-   item difficulty
+-   progress trends
+
+------------------------------------------------------------------------
+
+# Accessibility Considerations
+
+Designed for mild aphasia users:
+
+-   simple prompts
+-   minimal cognitive load
+-   optional voice feedback
+-   repeatable exercises
+-   supportive evaluation language
+
+------------------------------------------------------------------------
+
+# Limitations
+
+-   Not a replacement for professional therapy
+-   Designed primarily for mild aphasia
+-   Speech recognition accuracy may vary
+
+------------------------------------------------------------------------
+
+# Author
+
+Karam-e-Abbas Ilyas\
+MEng Computer Science / Software Engineering\
+University of Birmingham
+
+This project explores **AI-assisted independent speech therapy tools
+using LLMs and speech recognition**.
