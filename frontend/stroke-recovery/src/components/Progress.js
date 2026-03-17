@@ -1,5 +1,5 @@
 // frontend/src/components/Progress.js
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { SignedIn, SignedOut, useAuth } from "@clerk/clerk-react";
 import "./Progress.css";
 
@@ -28,6 +28,17 @@ const TECHNIQUES = [
     shortLabel: "SFA",
     tip: "Build the meaning step by step. Think about category, function, location, appearance, and related ideas before naming the word.",
   },
+  {
+    id: "action_verb_naming",
+    label: "Action Verb Naming",
+    shortLabel: "Action Verbs",
+    tip: "Focus on the action happening in the picture. Think about what the person or subject is doing, then say the verb clearly.",
+  },
+];
+
+const AI_TECHNIQUE_OPTIONS = [
+  { id: "overall", label: "Overall" },
+  ...TECHNIQUES.map((t) => ({ id: t.id, label: t.label })),
 ];
 
 const GRAPH_TECHNIQUE_OPTIONS = [
@@ -36,6 +47,7 @@ const GRAPH_TECHNIQUE_OPTIONS = [
   { id: "naming_with_cues", label: "Naming with Cues" },
   { id: "sentence_repetition", label: "Sentence Repetition" },
   { id: "semantic_feature_analysis", label: "Semantic Feature Analysis" },
+  { id: "action_verb_naming", label: "Action Verb Naming" },
 ];
 
 const GRAPH_METRIC_OPTIONS = {
@@ -73,6 +85,43 @@ const GRAPH_METRIC_OPTIONS = {
     { id: "first_try_accuracy", label: "First Attempt Accuracy" },
     { id: "avg_attempts_per_item", label: "Avg Attempts / Item" },
     { id: "total_items", label: "Items Trained" },
+  ],
+  action_verb_naming: [
+    { id: "points", label: "Points" },
+    { id: "sessions", label: "Sessions" },
+    { id: "first_try_accuracy", label: "First Attempt Accuracy" },
+    { id: "avg_attempts_per_item", label: "Avg Attempts / Item" },
+    { id: "total_items", label: "Items Trained" },
+  ],
+};
+
+const EMPTY_AI_EVALUATION = {
+  target: "overall",
+  target_label: "Overall",
+  summary: "",
+  strengths: [],
+  areas_to_strengthen: [],
+  technique_observations: [],
+  next_focus: [],
+  encouraging_note: "",
+};
+
+const OVERALL_SECTION_FALLBACKS = {
+  strengths: [
+    "Regular practice is helping build consistency over time.",
+    "Recent sessions are providing useful insight into developing skills.",
+  ],
+  areas_to_strengthen: [
+    "Some responses may benefit from slower, more deliberate retrieval.",
+    "A few items may need additional repetition to build confidence.",
+  ],
+  technique_observations: [
+    "Patterns in recent sessions suggest steady improvement through repeated practice.",
+    "Some exercises appear easier than others, which is normal during recovery.",
+  ],
+  next_focus: [
+    "Continue short, regular sessions to reinforce retrieval pathways.",
+    "Revisit more challenging items while keeping the pace calm and supported.",
   ],
 };
 
@@ -157,11 +206,259 @@ function shortTechniqueLabel(techniqueId) {
   return TECHNIQUES.find((t) => t.id === techniqueId)?.shortLabel || techniqueId;
 }
 
+function aiTargetLabel(techniqueId) {
+  return AI_TECHNIQUE_OPTIONS.find((t) => t.id === techniqueId)?.label || techniqueId;
+}
+
 function CompactStat({ label, value }) {
   return (
     <div className="stat">
       <div className="stat-label">{label}</div>
       <div className="stat-value">{value}</div>
+    </div>
+  );
+}
+
+function EvaluationSection({ title, items = [], emptyText = "No insight yet." }) {
+  return (
+    <div
+      style={{
+        padding: 16,
+        borderRadius: 16,
+        background: "rgba(248,250,252,0.9)",
+        border: "1px solid rgba(0,0,0,0.05)",
+      }}
+    >
+      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>{title}</div>
+      {!items.length ? (
+        <div style={{ fontSize: 14, opacity: 0.65 }}>{emptyText}</div>
+      ) : (
+        <div style={{ display: "grid", gap: 8 }}>
+          {items.map((item, idx) => (
+            <div
+              key={`${title}-${idx}`}
+              style={{
+                fontSize: 14,
+                lineHeight: 1.5,
+                display: "flex",
+                gap: 8,
+                alignItems: "flex-start",
+              }}
+            >
+              <span style={{ fontWeight: 800, opacity: 0.7 }}>•</span>
+              <span>{item}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AIProgressEvaluationCard({
+  selectedAiTechnique,
+  setSelectedAiTechnique,
+  aiEvaluation,
+  aiLoading,
+  aiError,
+  onRefresh,
+}) {
+  const isOverall = selectedAiTechnique === "overall";
+
+  const strengths =
+    aiEvaluation?.strengths?.length > 0
+      ? aiEvaluation.strengths
+      : isOverall
+      ? OVERALL_SECTION_FALLBACKS.strengths
+      : [];
+
+  const areasToStrengthen =
+    aiEvaluation?.areas_to_strengthen?.length > 0
+      ? aiEvaluation.areas_to_strengthen
+      : isOverall
+      ? OVERALL_SECTION_FALLBACKS.areas_to_strengthen
+      : [];
+
+  const techniqueObservations =
+    aiEvaluation?.technique_observations?.length > 0
+      ? aiEvaluation.technique_observations
+      : isOverall
+      ? OVERALL_SECTION_FALLBACKS.technique_observations
+      : [];
+
+  const nextFocus =
+    aiEvaluation?.next_focus?.length > 0
+      ? aiEvaluation.next_focus
+      : isOverall
+      ? OVERALL_SECTION_FALLBACKS.next_focus
+      : [];
+
+  return (
+    <div className="progress-card">
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <div className="progress-card-header" style={{ marginBottom: 0 }}>
+            <h2>AI Progress Evaluation</h2>
+            <span className="chip">Supportive insight</span>
+          </div>
+          <div className="progress-muted" style={{ marginTop: 4 }}>
+            A supportive summary of progress, areas to strengthen, and helpful next steps.
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "end", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 220 }}>
+            <label className="progress-muted" style={{ fontSize: 13 }}>
+              Focus
+            </label>
+            <select
+              value={selectedAiTechnique}
+              onChange={(e) => setSelectedAiTechnique(e.target.value)}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(0,0,0,0.08)",
+                background: "white",
+                fontFamily: "inherit",
+              }}
+            >
+              {AI_TECHNIQUE_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={aiLoading}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 12,
+              border: "1px solid rgba(0,0,0,0.08)",
+              background: aiLoading ? "rgba(255,255,255,0.7)" : "#ffffff",
+              cursor: aiLoading ? "default" : "pointer",
+              fontWeight: 700,
+              fontFamily: "inherit",
+              minHeight: 42,
+            }}
+          >
+            {aiLoading ? "Refreshing..." : "Refresh Insight"}
+          </button>
+        </div>
+      </div>
+
+      {aiError ? (
+        <div className="progress-error" style={{ marginTop: 16 }}>
+          {aiError}
+        </div>
+      ) : null}
+
+      {!aiError && aiLoading && !aiEvaluation?.summary ? (
+        <div className="progress-note" style={{ marginTop: 16 }}>
+          Generating a supportive progress summary...
+        </div>
+      ) : null}
+
+      {!aiError && (aiEvaluation?.summary || aiEvaluation?.encouraging_note) ? (
+        <div style={{ marginTop: 18, display: "grid", gap: 16 }}>
+          <div
+            style={{
+              padding: 18,
+              borderRadius: 18,
+              background: "rgba(255,255,255,0.72)",
+              border: "1px solid rgba(0,0,0,0.06)",
+              boxShadow: "0 10px 28px rgba(16,24,40,0.05)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 10,
+                alignItems: "center",
+                flexWrap: "wrap",
+                marginBottom: 10,
+              }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 800 }}>
+                {aiEvaluation?.target_label || aiTargetLabel(selectedAiTechnique)}
+              </div>
+              <span className="chip">
+                {isOverall ? "AI overall summary" : "AI summary"}
+              </span>
+            </div>
+
+            <div style={{ fontSize: 15, lineHeight: 1.65 }}>
+              {aiEvaluation?.summary || "No summary available yet."}
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <EvaluationSection
+              title="Strengths"
+              items={strengths}
+              emptyText="No strengths highlighted yet."
+            />
+            <EvaluationSection
+              title="Areas to Strengthen"
+              items={areasToStrengthen}
+              emptyText="No focus areas highlighted yet."
+            />
+            <EvaluationSection
+              title="Technique Observations"
+              items={techniqueObservations}
+              emptyText="No technique observations yet."
+            />
+            <EvaluationSection
+              title="Suggested Next Focus"
+              items={nextFocus}
+              emptyText="No next-step suggestions yet."
+            />
+          </div>
+
+          {aiEvaluation?.encouraging_note ? (
+            <div
+              style={{
+                padding: 16,
+                borderRadius: 16,
+                background:
+                  "linear-gradient(180deg, rgba(137,207,240,0.18) 0%, rgba(76,139,245,0.12) 100%)",
+                border: "1px solid rgba(76,139,245,0.12)",
+              }}
+            >
+              <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 8 }}>
+                Encouraging Note
+              </div>
+              <div style={{ fontSize: 14, lineHeight: 1.6 }}>
+                {aiEvaluation.encouraging_note}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!aiError && !aiLoading && !aiEvaluation?.summary && !aiEvaluation?.encouraging_note ? (
+        <div className="progress-note" style={{ marginTop: 16 }}>
+          Choose a focus and press refresh to generate an AI progress evaluation.
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -302,12 +599,13 @@ function TechniqueCard({ technique, stats }) {
   const isSentence = technique.id === "sentence_repetition";
   const showCue = technique.id === "image_naming" || technique.id === "naming_with_cues";
   const isSfa = technique.id === "semantic_feature_analysis";
+  const isActionVerb = technique.id === "action_verb_naming";
 
   return (
     <div className="progress-card">
       <div className="progress-card-header">
         <h2>{technique.label}</h2>
-        <span className="chip">Technique</span>
+        <span className="chip">Selected Exercise</span>
       </div>
 
       <div className="stats-row">
@@ -323,10 +621,7 @@ function TechniqueCard({ technique, stats }) {
       </div>
 
       <div className="stats-row">
-        <CompactStat
-          label="First Attempt"
-          value={percent(stats?.first_try_accuracy)}
-        />
+        <CompactStat label="First Attempt" value={percent(stats?.first_try_accuracy)} />
         <CompactStat
           label="Avg Attempts"
           value={Number(stats?.avg_attempts_per_item || 0).toFixed(1)}
@@ -360,6 +655,14 @@ function TechniqueCard({ technique, stats }) {
       ) : null}
 
       {isSfa ? (
+        <div className="stats-row">
+          <CompactStat label="Correct First" value={stats?.correct_first ?? 0} />
+          <CompactStat label="Correct Second" value={stats?.correct_second ?? 0} />
+          <CompactStat label="Incorrect" value={stats?.incorrect ?? 0} />
+        </div>
+      ) : null}
+
+      {isActionVerb ? (
         <div className="stats-row">
           <CompactStat label="Correct First" value={stats?.correct_first ?? 0} />
           <CompactStat label="Correct Second" value={stats?.correct_second ?? 0} />
@@ -466,7 +769,13 @@ export default function Progress() {
 
   const [selectedTechnique, setSelectedTechnique] = useState("overall");
   const [selectedMetric, setSelectedMetric] = useState("points");
+  const [selectedOverviewTechnique, setSelectedOverviewTechnique] = useState("image_naming");
+  const [selectedAiTechnique, setSelectedAiTechnique] = useState("overall");
   const [showPerTechniqueFocus, setShowPerTechniqueFocus] = useState(false);
+
+  const [aiEvaluation, setAiEvaluation] = useState(EMPTY_AI_EVALUATION);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
 
   const levelInfo = useMemo(
     () => computeLevel(me?.total_exp || 0),
@@ -493,6 +802,71 @@ export default function Progress() {
 
   const itemAnalytics = summary?.item_analytics || {};
   const byTechniqueAnalytics = itemAnalytics?.by_technique || {};
+
+  const selectedOverviewTechniqueConfig = useMemo(
+    () => TECHNIQUES.find((t) => t.id === selectedOverviewTechnique) || TECHNIQUES[0],
+    [selectedOverviewTechnique]
+  );
+
+  const selectedOverviewStats = useMemo(
+    () => summary?.techniques?.[selectedOverviewTechnique] || {},
+    [summary, selectedOverviewTechnique]
+  );
+
+  const fetchAiEvaluation = useCallback(
+    async (techniqueId = selectedAiTechnique) => {
+      setAiLoading(true);
+      setAiError(null);
+
+      try {
+        const token = await getToken();
+        if (!token) {
+          throw new Error("You need to be signed in to generate an evaluation.");
+        }
+
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        };
+
+        const res = await fetch("http://localhost:8000/api/progress/ai-evaluation", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            target: techniqueId,
+            summary,
+            profile: me,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data?.detail || "Failed to generate AI progress evaluation.");
+        }
+
+        setAiEvaluation({
+          target: data?.target || techniqueId,
+          target_label: data?.target_label || aiTargetLabel(techniqueId),
+          summary: data?.summary || "",
+          strengths: Array.isArray(data?.strengths) ? data.strengths : [],
+          areas_to_strengthen: Array.isArray(data?.areas_to_strengthen)
+            ? data.areas_to_strengthen
+            : [],
+          technique_observations: Array.isArray(data?.technique_observations)
+            ? data.technique_observations
+            : [],
+          next_focus: Array.isArray(data?.next_focus) ? data.next_focus : [],
+          encouraging_note: data?.encouraging_note || "",
+        });
+      } catch (e) {
+        setAiError(String(e.message || e));
+      } finally {
+        setAiLoading(false);
+      }
+    },
+    [getToken, me, selectedAiTechnique, summary]
+  );
 
   useEffect(() => {
     const load = async () => {
@@ -530,6 +904,12 @@ export default function Progress() {
 
     load();
   }, [getToken]);
+
+  useEffect(() => {
+    if (!loading && me && summary) {
+      fetchAiEvaluation(selectedAiTechnique);
+    }
+  }, [loading, me, summary, selectedAiTechnique, fetchAiEvaluation]);
 
   return (
     <div className="progress-page">
@@ -764,33 +1144,64 @@ export default function Progress() {
               </div>
             </div>
 
-            <div>
+            <AIProgressEvaluationCard
+              selectedAiTechnique={selectedAiTechnique}
+              setSelectedAiTechnique={setSelectedAiTechnique}
+              aiEvaluation={aiEvaluation}
+              aiLoading={aiLoading}
+              aiError={aiError}
+              onRefresh={() => fetchAiEvaluation(selectedAiTechnique)}
+            />
+
+            <div className="progress-card">
               <div
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
                   gap: 12,
-                  marginBottom: 12,
                   flexWrap: "wrap",
                 }}
               >
                 <div>
-                  <h2 style={{ margin: 0, fontSize: 22 }}>Technique Overview</h2>
-                  <div className="progress-muted" style={{ marginTop: 4 }}>
-                    A compact summary of how each exercise is going.
+                  <div className="progress-card-header" style={{ marginBottom: 0 }}>
+                    <h2>Technique Overview</h2>
+                    <span className="chip">Focused view</span>
                   </div>
+                  <div className="progress-muted" style={{ marginTop: 4 }}>
+                    View one exercise at a time for a cleaner summary.
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 220 }}>
+                  <label className="progress-muted" style={{ fontSize: 13 }}>
+                    Exercise
+                  </label>
+                  <select
+                    value={selectedOverviewTechnique}
+                    onChange={(e) => setSelectedOverviewTechnique(e.target.value)}
+                    style={{
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: "1px solid rgba(0,0,0,0.08)",
+                      background: "white",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    {TECHNIQUES.map((technique) => (
+                      <option key={technique.id} value={technique.id}>
+                        {technique.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
-              <div className="progress-grid">
-                {TECHNIQUES.map((t) => (
-                  <TechniqueCard
-                    key={t.id}
-                    technique={t}
-                    stats={summary?.techniques?.[t.id] || {}}
-                  />
-                ))}
+              <div style={{ marginTop: 16 }}>
+                <TechniqueCard
+                  technique={selectedOverviewTechniqueConfig}
+                  stats={selectedOverviewStats}
+                />
               </div>
             </div>
 

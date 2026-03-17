@@ -1,0 +1,3979 @@
+{
+  "action_verb_naming": [
+    {
+      "source_id": "ball_pit",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "ball_pit",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/ball_pit.png",
+      "tags": [
+        "ball pit",
+        "play",
+        "children"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "piscine de balles",
+      "usage_count": 3,
+      "semantic_hint": "engaging in a fun activity with balls",
+      "matched_catalog_id": "ball_pit",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "ball_pool",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "ball_pool",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/ball_pool.png",
+      "tags": [
+        "ball pool",
+        "play",
+        "children"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "piscine à boules",
+      "usage_count": 3,
+      "semantic_hint": "having fun in a pool of balls",
+      "matched_catalog_id": "ball_pool",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "bicycle_workshop",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "bicycle_workshop",
+      "verb": "opening",
+      "base_verb": "open",
+      "acceptable_answers": [
+        "open",
+        "opening"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/bicycle_workshop.png",
+      "tags": [
+        "workshop",
+        "bicycle",
+        "activity"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "atelier de bicyclettes",
+      "usage_count": 5,
+      "semantic_hint": "making a space accessible for work",
+      "matched_catalog_id": "bicycle_workshop",
+      "image_prompt": "A person opening in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "breaded_fish",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "breaded_fish",
+      "verb": "eating",
+      "base_verb": "eat",
+      "acceptable_answers": [
+        "eat",
+        "eating"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/breaded_fish.png",
+      "tags": [
+        "breaded fish",
+        "food",
+        "meal"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "poisson pané",
+      "usage_count": 4,
+      "semantic_hint": "Think about what the person is doing with food or drink.",
+      "matched_catalog_id": "breaded_fish",
+      "image_prompt": "A person eating in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "brush_teeth",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "brush_teeth",
+      "verb": "brushing",
+      "base_verb": "brush",
+      "acceptable_answers": [
+        "brush",
+        "brushing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/brush_teeth.png",
+      "tags": [
+        "brush",
+        "teeth",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "laver les dents",
+      "usage_count": 6,
+      "semantic_hint": "taking care of dental hygiene",
+      "matched_catalog_id": "brush_teeth",
+      "image_prompt": "A person brushing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "brush_teeth_2",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "brush_teeth_2",
+      "verb": "brushing",
+      "base_verb": "brush",
+      "acceptable_answers": [
+        "brush",
+        "brushing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/brush_teeth_2.png",
+      "tags": [
+        "brush",
+        "teeth",
+        "hygiene"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "se laver les dents",
+      "usage_count": 6,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "brush_teeth_2",
+      "image_prompt": "A person brushing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "brushing_teeth",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "brushing_teeth",
+      "verb": "brushing",
+      "base_verb": "brush",
+      "acceptable_answers": [
+        "brush",
+        "brushing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/brushing_teeth.png",
+      "tags": [
+        "brushing",
+        "teeth",
+        "hygiene"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "se brosser les dents",
+      "usage_count": 6,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "brushing_teeth",
+      "image_prompt": "A person brushing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "bucket_and_mop",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "bucket_and_mop",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/bucket_and_mop.png",
+      "tags": [
+        "bucket",
+        "mop",
+        "cleaning"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "sceau et serpillère",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "bucket_and_mop",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "bucket_and_shovel",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "bucket_and_shovel",
+      "verb": "digging",
+      "base_verb": "dig",
+      "acceptable_answers": [
+        "dig",
+        "digging"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/bucket_and_shovel.png",
+      "tags": [
+        "bucket",
+        "shovel",
+        "digging"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "sceau et pelle",
+      "usage_count": 4,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "bucket_and_shovel",
+      "image_prompt": "A person digging in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "bucket_for_cleaning_the_floor",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "bucket_for_cleaning_the_floor",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/bucket_for_cleaning_the_floor.png",
+      "tags": [
+        "bucket",
+        "cleaning",
+        "floor"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "sceau pour nettoyer le sol",
+      "usage_count": 10,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "bucket_for_cleaning_the_floor",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "can_i_play",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "can_i_play",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/can_i_play.png",
+      "tags": [
+        "play",
+        "question"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "puis-je jouer",
+      "usage_count": 7,
+      "semantic_hint": "asking for permission to have fun",
+      "matched_catalog_id": "can_i_play",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "catch",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "catch",
+      "verb": "catching",
+      "base_verb": "catch",
+      "acceptable_answers": [
+        "catch",
+        "catching"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/catch.png",
+      "tags": [
+        "catch",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "attraper",
+      "usage_count": 2,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "catch",
+      "image_prompt": "A person catching in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean.png",
+      "tags": [
+        "clean",
+        "action",
+        "hygiene"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer",
+      "usage_count": 3,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "clean",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean_the_bottom",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean_the_bottom",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean_the_bottom.png",
+      "tags": [
+        "clean",
+        "hygiene",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer le derrière",
+      "usage_count": 5,
+      "semantic_hint": "ensuring hygiene in a specific area",
+      "matched_catalog_id": "clean_the_bottom",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean_the_comb",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean_the_comb",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean_the_comb.png",
+      "tags": [
+        "clean",
+        "hygiene",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer le peigne",
+      "usage_count": 4,
+      "semantic_hint": "removing debris from a grooming tool",
+      "matched_catalog_id": "clean_the_comb",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean_the_glass",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean_the_glass",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean_the_glass.png",
+      "tags": [
+        "clean",
+        "cleaning",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer la vitre",
+      "usage_count": 6,
+      "semantic_hint": "making a transparent surface clear",
+      "matched_catalog_id": "clean_the_glass",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean_the_glasses",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean_the_glasses",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean_the_glasses.png",
+      "tags": [
+        "clean",
+        "cleaning",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer les lunettes",
+      "usage_count": 5,
+      "semantic_hint": "ensuring vision aids are clear",
+      "matched_catalog_id": "clean_the_glasses",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean_the_shoes",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean_the_shoes",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean_the_shoes.png",
+      "tags": [
+        "clean",
+        "cleaning",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer les chaussures",
+      "usage_count": 5,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "clean_the_shoes",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean_the_window",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean_the_window",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean_the_window.png",
+      "tags": [
+        "clean",
+        "cleaning",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer la fenêtre",
+      "usage_count": 7,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "clean_the_window",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean_the_windows",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean_the_windows",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean_the_windows.png",
+      "tags": [
+        "clean",
+        "cleaning",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer les fenêtres",
+      "usage_count": 4,
+      "semantic_hint": "ensuring all windows are clear",
+      "matched_catalog_id": "clean_the_windows",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean_the_windows_2",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean_the_windows_2",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean_the_windows_2.png",
+      "tags": [
+        "clean",
+        "cleaning",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer les vitres",
+      "usage_count": 4,
+      "semantic_hint": "removing grime from glass surfaces",
+      "matched_catalog_id": "clean_the_windows_2",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean_with_a_duster",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean_with_a_duster",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean_with_a_duster.png",
+      "tags": [
+        "clean",
+        "cleaning",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer avec un plumeau",
+      "usage_count": 5,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "clean_with_a_duster",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "clean_your_toothbrush",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "clean_your_toothbrush",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/clean_your_toothbrush.png",
+      "tags": [
+        "clean",
+        "hygiene",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyer sa brosse à dents",
+      "usage_count": 10,
+      "semantic_hint": "maintaining hygiene of your dental tool",
+      "matched_catalog_id": "clean_your_toothbrush",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "cleaning",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "cleaning",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/cleaning.png",
+      "tags": [
+        "cleaning",
+        "action",
+        "household"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nettoyage",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "cleaning",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "climb",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "climb",
+      "verb": "climbing",
+      "base_verb": "climb",
+      "acceptable_answers": [
+        "climb",
+        "climbing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/climb.png",
+      "tags": [
+        "climb",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "grimper",
+      "usage_count": 2,
+      "semantic_hint": "ascending to a higher place",
+      "matched_catalog_id": "climb",
+      "image_prompt": "A person climbing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "climb_the_stairs",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "climb_the_stairs",
+      "verb": "climbing",
+      "base_verb": "climb",
+      "acceptable_answers": [
+        "climb",
+        "climbing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/climb_the_stairs.png",
+      "tags": [
+        "stairs",
+        "climb"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "monter les escaliers",
+      "usage_count": 5,
+      "semantic_hint": "Think about how the person is moving.",
+      "matched_catalog_id": "climb_the_stairs",
+      "image_prompt": "A person climbing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "close_your_eyes",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "close_your_eyes",
+      "verb": "closing",
+      "base_verb": "close",
+      "acceptable_answers": [
+        "close",
+        "closing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/close_your_eyes.png",
+      "tags": [
+        "action",
+        "eyes"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "fermer les yeux",
+      "usage_count": 5,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "close_your_eyes",
+      "image_prompt": "A person closing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "conversation",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "conversation",
+      "verb": "talking",
+      "base_verb": "talk",
+      "acceptable_answers": [
+        "talk",
+        "talking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/conversation.png",
+      "tags": [
+        "conversation",
+        "talking",
+        "communication"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "conversation",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "conversation",
+      "image_prompt": "A person talking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "cooking",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "cooking",
+      "verb": "cooking",
+      "base_verb": "cook",
+      "acceptable_answers": [
+        "cook",
+        "cooking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/cooking.png",
+      "tags": [
+        "cooking",
+        "food",
+        "preparation"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "cuisiner",
+      "usage_count": 2,
+      "semantic_hint": "Think about what the person is doing with food or drink.",
+      "matched_catalog_id": "cooking",
+      "image_prompt": "A person cooking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "cutting",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "cutting",
+      "verb": "cutting",
+      "base_verb": "cut",
+      "acceptable_answers": [
+        "cut",
+        "cutting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/cutting.png",
+      "tags": [
+        "cutting",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "découper",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "cutting",
+      "image_prompt": "A person cutting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "cutting_2",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "cutting_2",
+      "verb": "cutting",
+      "base_verb": "cut",
+      "acceptable_answers": [
+        "cut",
+        "cutting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/cutting_2.png",
+      "tags": [
+        "cutting",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "se couper",
+      "usage_count": 4,
+      "semantic_hint": "separating with a sharp tool",
+      "matched_catalog_id": "cutting_2",
+      "image_prompt": "A person cutting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "cutting_bread",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "cutting_bread",
+      "verb": "cutting",
+      "base_verb": "cut",
+      "acceptable_answers": [
+        "cut",
+        "cutting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/cutting_bread.png",
+      "tags": [
+        "cutting",
+        "bread",
+        "food"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "couper le pain",
+      "usage_count": 5,
+      "semantic_hint": "Think about what the person is doing with food or drink.",
+      "matched_catalog_id": "cutting_bread",
+      "image_prompt": "A person cutting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "cutting_hair",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "cutting_hair",
+      "verb": "cutting",
+      "base_verb": "cut",
+      "acceptable_answers": [
+        "cut",
+        "cutting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/cutting_hair.png",
+      "tags": [
+        "cutting",
+        "hair",
+        "grooming"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "couper les cheveux",
+      "usage_count": 6,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "cutting_hair",
+      "image_prompt": "A person cutting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "cutting_nails",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "cutting_nails",
+      "verb": "cutting",
+      "base_verb": "cut",
+      "acceptable_answers": [
+        "cut",
+        "cutting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/cutting_nails.png",
+      "tags": [
+        "cutting",
+        "nails",
+        "hygiene"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "se couper les ongles",
+      "usage_count": 7,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "cutting_nails",
+      "image_prompt": "A person cutting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "dance",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "dance",
+      "verb": "dancing",
+      "base_verb": "dance",
+      "acceptable_answers": [
+        "dance",
+        "dancing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/dance.png",
+      "tags": [
+        "dance",
+        "movement",
+        "activity"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "danse",
+      "usage_count": 1,
+      "semantic_hint": "Think about how the person is moving.",
+      "matched_catalog_id": "dance",
+      "image_prompt": "A person dancing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "dance_therapy",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "dance_therapy",
+      "verb": "dancing",
+      "base_verb": "dance",
+      "acceptable_answers": [
+        "dance",
+        "dancing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/dance_therapy.png",
+      "tags": [
+        "dance",
+        "therapy",
+        "movement"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "dance-thérapie",
+      "usage_count": 1,
+      "semantic_hint": "Think about how the person is moving.",
+      "matched_catalog_id": "dance_therapy",
+      "image_prompt": "A person dancing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "dance_workshop",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "dance_workshop",
+      "verb": "dancing",
+      "base_verb": "dance",
+      "acceptable_answers": [
+        "dance",
+        "dancing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/dance_workshop.png",
+      "tags": [
+        "workshop",
+        "dance",
+        "activity"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "atelier de danse",
+      "usage_count": 5,
+      "semantic_hint": "participating in a movement class",
+      "matched_catalog_id": "dance_workshop",
+      "image_prompt": "A person dancing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "dig",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "dig",
+      "verb": "digging",
+      "base_verb": "dig",
+      "acceptable_answers": [
+        "dig",
+        "digging"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/dig.png",
+      "tags": [
+        "dig",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "creuser",
+      "usage_count": 1,
+      "semantic_hint": "removing earth from a hole",
+      "matched_catalog_id": "dig",
+      "image_prompt": "A person digging in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "digging",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "digging",
+      "verb": "digging",
+      "base_verb": "dig",
+      "acceptable_answers": [
+        "dig",
+        "digging"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/digging.png",
+      "tags": [
+        "digging",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "fouiller",
+      "usage_count": 4,
+      "semantic_hint": "creating a space in the ground",
+      "matched_catalog_id": "digging",
+      "image_prompt": "A person digging in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "discuss",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "discuss",
+      "verb": "talking",
+      "base_verb": "talk",
+      "acceptable_answers": [
+        "talk",
+        "talking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/discuss.png",
+      "tags": [
+        "discuss",
+        "talk"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "discuter",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "discuss",
+      "image_prompt": "A person talking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "draw_the_pattern",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "draw_the_pattern",
+      "verb": "drawing",
+      "base_verb": "draw",
+      "acceptable_answers": [
+        "draw",
+        "drawing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/draw_the_pattern.png",
+      "tags": [
+        "draw",
+        "pattern",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "dessiner le patron",
+      "usage_count": 3,
+      "semantic_hint": "creating an image on a surface",
+      "matched_catalog_id": "draw_the_pattern",
+      "image_prompt": "A person drawing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "drive",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "drive",
+      "verb": "driving",
+      "base_verb": "drive",
+      "acceptable_answers": [
+        "drive",
+        "driving"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/drive.png",
+      "tags": [
+        "drive",
+        "action",
+        "transport"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "conduire",
+      "usage_count": 4,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "drive",
+      "image_prompt": "A person driving in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "drying_the_table",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "drying_the_table",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/drying_the_table.png",
+      "tags": [
+        "drying",
+        "table",
+        "cleaning"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "sécher la table",
+      "usage_count": 4,
+      "semantic_hint": "removing moisture from a surface",
+      "matched_catalog_id": "drying_the_table",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "dusting",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "dusting",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/dusting.png",
+      "tags": [
+        "cleaning",
+        "dust"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "enlever la poussière",
+      "usage_count": 5,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "dusting",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "eggs_in_a_pan",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "eggs_in_a_pan",
+      "verb": "cooking",
+      "base_verb": "cook",
+      "acceptable_answers": [
+        "cook",
+        "cooking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/eggs_in_a_pan.png",
+      "tags": [
+        "eggs",
+        "cooking",
+        "food"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "oeufs à la poêle",
+      "usage_count": 5,
+      "semantic_hint": "preparing a dish with eggs",
+      "matched_catalog_id": "eggs_in_a_pan",
+      "image_prompt": "A person cooking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "feed",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "feed",
+      "verb": "feeding",
+      "base_verb": "feed",
+      "acceptable_answers": [
+        "feed",
+        "feeding"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/feed.png",
+      "tags": [
+        "feed",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nourrir",
+      "usage_count": 2,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "feed",
+      "image_prompt": "A person feeding in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "finger_painting",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "finger_painting",
+      "verb": "painting",
+      "base_verb": "paint",
+      "acceptable_answers": [
+        "paint",
+        "painting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/finger_painting.png",
+      "tags": [
+        "painting",
+        "art",
+        "finger"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "peindre avec les doigts",
+      "usage_count": 7,
+      "semantic_hint": "Think about what the person is doing with a book, paper, or tools.",
+      "matched_catalog_id": "finger_painting",
+      "image_prompt": "A person painting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "fish_in_green_sauce",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "fish_in_green_sauce",
+      "verb": "eating",
+      "base_verb": "eat",
+      "acceptable_answers": [
+        "eat",
+        "eating"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/fish_in_green_sauce.png",
+      "tags": [
+        "fish",
+        "food",
+        "sauce"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "poisson en sauce verte",
+      "usage_count": 7,
+      "semantic_hint": "Think about what the person is doing with food or drink.",
+      "matched_catalog_id": "fish_in_green_sauce",
+      "image_prompt": "A person eating in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "guitar",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "guitar",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/guitar.png",
+      "tags": [
+        "guitar",
+        "music",
+        "play"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer la guitare",
+      "usage_count": 7,
+      "semantic_hint": "producing music with an instrument",
+      "matched_catalog_id": "guitar",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "haircut",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "haircut",
+      "verb": "cutting",
+      "base_verb": "cut",
+      "acceptable_answers": [
+        "cut",
+        "cutting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/haircut.png",
+      "tags": [
+        "hair",
+        "cut",
+        "grooming"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "coupe de cheveux",
+      "usage_count": 8,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "haircut",
+      "image_prompt": "A person cutting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "hamburger_and_fries",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "hamburger_and_fries",
+      "verb": "eating",
+      "base_verb": "eat",
+      "acceptable_answers": [
+        "eat",
+        "eating"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/hamburger_and_fries.png",
+      "tags": [
+        "hamburger",
+        "fries",
+        "food"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "hamburger et frites",
+      "usage_count": 1,
+      "semantic_hint": "This involves enjoying a meal.",
+      "matched_catalog_id": "hamburger_and_fries",
+      "image_prompt": "A person eating in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "high_jump",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "high_jump",
+      "verb": "jumping",
+      "base_verb": "jump",
+      "acceptable_answers": [
+        "jump",
+        "jumping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/high_jump.png",
+      "tags": [
+        "jump",
+        "sport"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "saut en hauteur",
+      "usage_count": 4,
+      "semantic_hint": "This action involves leaping into the air.",
+      "matched_catalog_id": "high_jump",
+      "image_prompt": "A person jumping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "hockey",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "hockey",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/hockey.png",
+      "tags": [
+        "hockey",
+        "sport",
+        "play"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au hockey",
+      "usage_count": 7,
+      "semantic_hint": "This is a fun activity often done with a team.",
+      "matched_catalog_id": "hockey",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "hug",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "hug",
+      "verb": "hugging",
+      "base_verb": "hug",
+      "acceptable_answers": [
+        "hug",
+        "hugging"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/hug.png",
+      "tags": [
+        "hug",
+        "affection"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "embrasser",
+      "usage_count": 3,
+      "semantic_hint": "This action shows warmth and affection.",
+      "matched_catalog_id": "hug",
+      "image_prompt": "A person hugging in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "hug_2",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "hug_2",
+      "verb": "hugging",
+      "base_verb": "hug",
+      "acceptable_answers": [
+        "hug",
+        "hugging"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/hug_2.png",
+      "tags": [
+        "hug",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "serrer dans les bras",
+      "usage_count": 6,
+      "semantic_hint": "This is a gesture of closeness and care.",
+      "matched_catalog_id": "hug_2",
+      "image_prompt": "A person hugging in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "hurdle_jump",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "hurdle_jump",
+      "verb": "jumping",
+      "base_verb": "jump",
+      "acceptable_answers": [
+        "jump",
+        "jumping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/hurdle_jump.png",
+      "tags": [
+        "jump",
+        "hurdle",
+        "sport"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "saut de haies",
+      "usage_count": 3,
+      "semantic_hint": "This involves overcoming an obstacle with a leap.",
+      "matched_catalog_id": "hurdle_jump",
+      "image_prompt": "A person jumping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "indoor_pool",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "indoor_pool",
+      "verb": "opening",
+      "base_verb": "open",
+      "acceptable_answers": [
+        "open",
+        "opening"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/indoor_pool.png",
+      "tags": [
+        "pool",
+        "indoor",
+        "recreation"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "piscine couverte",
+      "usage_count": 7,
+      "semantic_hint": "This action allows access to a space.",
+      "matched_catalog_id": "indoor_pool",
+      "image_prompt": "A person opening in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "jump",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "jump",
+      "verb": "jumping",
+      "base_verb": "jump",
+      "acceptable_answers": [
+        "jump",
+        "jumping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/jump.png",
+      "tags": [
+        "jump",
+        "sport"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "sauter",
+      "usage_count": 2,
+      "semantic_hint": "This action involves lifting off the ground.",
+      "matched_catalog_id": "jump",
+      "image_prompt": "A person jumping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "jump_in_water",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "jump_in_water",
+      "verb": "jumping",
+      "base_verb": "jump",
+      "acceptable_answers": [
+        "jump",
+        "jumping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/jump_in_water.png",
+      "tags": [
+        "jump",
+        "water",
+        "swimming"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "se jeter dans l'eau",
+      "usage_count": 4,
+      "semantic_hint": "This action involves entering a body of water.",
+      "matched_catalog_id": "jump_in_water",
+      "image_prompt": "A person jumping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "jump_into_water",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "jump_into_water",
+      "verb": "jumping",
+      "base_verb": "jump",
+      "acceptable_answers": [
+        "jump",
+        "jumping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/jump_into_water.png",
+      "tags": [
+        "jump",
+        "water",
+        "sport"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "sauter dans l'eau",
+      "usage_count": 4,
+      "semantic_hint": "This action is often done for fun or sport.",
+      "matched_catalog_id": "jump_into_water",
+      "image_prompt": "A person jumping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "jump_rope",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "jump_rope",
+      "verb": "jumping",
+      "base_verb": "jump",
+      "acceptable_answers": [
+        "jump",
+        "jumping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/jump_rope.png",
+      "tags": [
+        "jump",
+        "rope",
+        "sport"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "sauter à la corde",
+      "usage_count": 7,
+      "semantic_hint": "This activity involves a rhythmic motion.",
+      "matched_catalog_id": "jump_rope",
+      "image_prompt": "A person jumping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "jump_with_both_feet",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "jump_with_both_feet",
+      "verb": "jumping",
+      "base_verb": "jump",
+      "acceptable_answers": [
+        "jump",
+        "jumping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/jump_with_both_feet.png",
+      "tags": [
+        "jump",
+        "sport"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "sauter à pieds joints",
+      "usage_count": 11,
+      "semantic_hint": "This action requires both feet to leave the ground.",
+      "matched_catalog_id": "jump_with_both_feet",
+      "image_prompt": "A person jumping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "kicking",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "kicking",
+      "verb": "kicking",
+      "base_verb": "kick",
+      "acceptable_answers": [
+        "kick",
+        "kicking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/kicking.png",
+      "tags": [
+        "kick",
+        "action",
+        "play"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "donner des coups de pied",
+      "usage_count": 19,
+      "semantic_hint": "This action often involves a foot movement.",
+      "matched_catalog_id": "kicking",
+      "image_prompt": "A person kicking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "kicking_2",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "kicking_2",
+      "verb": "kicking",
+      "base_verb": "kick",
+      "acceptable_answers": [
+        "kick",
+        "kicking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/kicking_2.png",
+      "tags": [
+        "kick",
+        "action",
+        "play"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "donner un coup de pied",
+      "usage_count": 19,
+      "semantic_hint": "This action can be playful or competitive.",
+      "matched_catalog_id": "kicking_2",
+      "image_prompt": "A person kicking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "laugh",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "laugh",
+      "verb": "laughing",
+      "base_verb": "laugh",
+      "acceptable_answers": [
+        "laugh",
+        "laughing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/laugh.png",
+      "tags": [
+        "laugh",
+        "emotion",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "rire",
+      "usage_count": 2,
+      "semantic_hint": "This action often expresses joy or amusement.",
+      "matched_catalog_id": "laugh",
+      "image_prompt": "A person laughing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "listen",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "listen",
+      "verb": "listening",
+      "base_verb": "listen",
+      "acceptable_answers": [
+        "listen",
+        "listening"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/listen.png",
+      "tags": [
+        "listen",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "écouter",
+      "usage_count": 1,
+      "semantic_hint": "This action involves paying attention to sounds.",
+      "matched_catalog_id": "listen",
+      "image_prompt": "A person listening in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "listening_to_music",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "listening_to_music",
+      "verb": "listening",
+      "base_verb": "listen",
+      "acceptable_answers": [
+        "listen",
+        "listening"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/listening_to_music.png",
+      "tags": [
+        "music",
+        "listening",
+        "activity"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "écouter de la musique",
+      "usage_count": 4,
+      "semantic_hint": "This activity often brings enjoyment and relaxation.",
+      "matched_catalog_id": "listening_to_music",
+      "image_prompt": "A person listening in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "long_jump",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "long_jump",
+      "verb": "jumping",
+      "base_verb": "jump",
+      "acceptable_answers": [
+        "jump",
+        "jumping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/long_jump.png",
+      "tags": [
+        "jump",
+        "sport"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "saut en longueur",
+      "usage_count": 4,
+      "semantic_hint": "This action involves leaping a great distance.",
+      "matched_catalog_id": "long_jump",
+      "image_prompt": "A person jumping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "on_one_foot",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "on_one_foot",
+      "verb": "standing",
+      "base_verb": "stand",
+      "acceptable_answers": [
+        "stand",
+        "standing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/on_one_foot.png",
+      "tags": [
+        "balance",
+        "exercise"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "à cloche-pied",
+      "usage_count": 10,
+      "semantic_hint": "This action requires balance on a single leg.",
+      "matched_catalog_id": "on_one_foot",
+      "image_prompt": "A person standing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "open_door",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "open_door",
+      "verb": "opening",
+      "base_verb": "open",
+      "acceptable_answers": [
+        "open",
+        "opening"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/open_door.png",
+      "tags": [
+        "open",
+        "door"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "ouvrir la porte",
+      "usage_count": 5,
+      "semantic_hint": "This action allows entry into a room.",
+      "matched_catalog_id": "open_door",
+      "image_prompt": "A person opening in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "open_eyes",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "open_eyes",
+      "verb": "opening",
+      "base_verb": "open",
+      "acceptable_answers": [
+        "open",
+        "opening"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/open_eyes.png",
+      "tags": [
+        "open",
+        "eyes"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "ouvrir les yeux",
+      "usage_count": 2,
+      "semantic_hint": "This action allows you to see the world.",
+      "matched_catalog_id": "open_eyes",
+      "image_prompt": "A person opening in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "open_mouth",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "open_mouth",
+      "verb": "opening",
+      "base_verb": "open",
+      "acceptable_answers": [
+        "open",
+        "opening"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/open_mouth.png",
+      "tags": [
+        "open",
+        "mouth"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "Ouvrir la bouche",
+      "usage_count": 2,
+      "semantic_hint": "This action is often done to speak or eat.",
+      "matched_catalog_id": "open_mouth",
+      "image_prompt": "A person opening in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "open_window",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "open_window",
+      "verb": "opening",
+      "base_verb": "open",
+      "acceptable_answers": [
+        "open",
+        "opening"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/open_window.png",
+      "tags": [
+        "open",
+        "window"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "ouvrir la fenêtre",
+      "usage_count": 4,
+      "semantic_hint": "This action lets in fresh air.",
+      "matched_catalog_id": "open_window",
+      "image_prompt": "A person opening in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "organize",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "organize",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/organize.png",
+      "tags": [
+        "organize",
+        "cleaning"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "ranger",
+      "usage_count": 2,
+      "semantic_hint": "This action involves tidying up a space.",
+      "matched_catalog_id": "organize",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "pear_in_syrup",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "pear_in_syrup",
+      "verb": "eating",
+      "base_verb": "eat",
+      "acceptable_answers": [
+        "eat",
+        "eating"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/pear_in_syrup.png",
+      "tags": [
+        "pear",
+        "food",
+        "dessert"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "poire au sirop",
+      "usage_count": 3,
+      "semantic_hint": "This involves enjoying a sweet treat.",
+      "matched_catalog_id": "pear_in_syrup",
+      "image_prompt": "A person eating in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "pears_in_syrup",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "pears_in_syrup",
+      "verb": "eating",
+      "base_verb": "eat",
+      "acceptable_answers": [
+        "eat",
+        "eating"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/pears_in_syrup.png",
+      "tags": [
+        "pears",
+        "food",
+        "dessert"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "poires au sirop",
+      "usage_count": 1,
+      "semantic_hint": "This involves enjoying a tasty treat.",
+      "matched_catalog_id": "pears_in_syrup",
+      "image_prompt": "A person eating in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "petanque",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "petanque",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/petanque.png",
+      "tags": [
+        "petanque",
+        "sport",
+        "play"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer à la pétanque",
+      "usage_count": 7,
+      "semantic_hint": "This is a fun activity often done outdoors.",
+      "matched_catalog_id": "petanque",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "piano",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "piano",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/piano.png",
+      "tags": [
+        "piano",
+        "music",
+        "play"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer le piano",
+      "usage_count": 6,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "piano",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "pick_up_toys",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "pick_up_toys",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/pick_up_toys.png",
+      "tags": [
+        "pick up",
+        "toys",
+        "cleaning"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "ramasser les jouets",
+      "usage_count": 2,
+      "semantic_hint": "This helps tidy up a space.",
+      "matched_catalog_id": "pick_up_toys",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "pick_up_trash",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "pick_up_trash",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/pick_up_trash.png",
+      "tags": [
+        "pick up",
+        "trash",
+        "cleaning"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "ramasser les poubelles",
+      "usage_count": 2,
+      "semantic_hint": "This keeps the environment tidy.",
+      "matched_catalog_id": "pick_up_trash",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "ping_pong",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "ping_pong",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/ping_pong.png",
+      "tags": [
+        "ping pong",
+        "sport",
+        "play"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au ping-pong",
+      "usage_count": 6,
+      "semantic_hint": "This is a fast-paced game with a ball.",
+      "matched_catalog_id": "ping_pong",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "ping_pong_2",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "ping_pong_2",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/ping_pong_2.png",
+      "tags": [
+        "ping pong",
+        "game",
+        "sport"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "ping-pong",
+      "usage_count": 1,
+      "semantic_hint": "This is a fun activity often played with friends.",
+      "matched_catalog_id": "ping_pong_2",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "playing",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "playing",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/playing.png",
+      "tags": [
+        "play",
+        "fun"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer",
+      "usage_count": 5,
+      "semantic_hint": "This is an enjoyable way to spend time.",
+      "matched_catalog_id": "playing",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "playing_baseball",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "playing_baseball",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/playing_baseball.png",
+      "tags": [
+        "playing",
+        "baseball",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au base-ball",
+      "usage_count": 6,
+      "semantic_hint": "This involves hitting a ball with a bat.",
+      "matched_catalog_id": "playing_baseball",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "playing_basketball",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "playing_basketball",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/playing_basketball.png",
+      "tags": [
+        "playing",
+        "basketball",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au basket-ball",
+      "usage_count": 6,
+      "semantic_hint": "This is a sport played with a hoop and a ball.",
+      "matched_catalog_id": "playing_basketball",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "playing_billiards",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "playing_billiards",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/playing_billiards.png",
+      "tags": [
+        "playing",
+        "billiards",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au billard",
+      "usage_count": 6,
+      "semantic_hint": "This is a game played on a table with balls.",
+      "matched_catalog_id": "playing_billiards",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "playing_bowling",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "playing_bowling",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/playing_bowling.png",
+      "tags": [
+        "playing",
+        "bowling",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au Bowling",
+      "usage_count": 7,
+      "semantic_hint": "This involves knocking down pins with a ball.",
+      "matched_catalog_id": "playing_bowling",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "playing_football",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "playing_football",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/playing_football.png",
+      "tags": [
+        "playing",
+        "football",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au football",
+      "usage_count": 7,
+      "semantic_hint": "This is a popular sport played with a round ball.",
+      "matched_catalog_id": "playing_football",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "playing_golf",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "playing_golf",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/playing_golf.png",
+      "tags": [
+        "playing",
+        "golf",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au golf",
+      "usage_count": 6,
+      "semantic_hint": "This involves hitting a ball into a series of holes.",
+      "matched_catalog_id": "playing_golf",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "playing_handball",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "playing_handball",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/playing_handball.png",
+      "tags": [
+        "playing",
+        "handball",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au hand-ball",
+      "usage_count": 5,
+      "semantic_hint": "This is a fast-paced team sport.",
+      "matched_catalog_id": "playing_handball",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "playing_with_water",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "playing_with_water",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/playing_with_water.png",
+      "tags": [
+        "water",
+        "play",
+        "fun"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "Jouer avec l'eau",
+      "usage_count": 7,
+      "semantic_hint": "This is a fun activity often enjoyed in the sun.",
+      "matched_catalog_id": "playing_with_water",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "pole_vault",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "pole_vault",
+      "verb": "jumping",
+      "base_verb": "jump",
+      "acceptable_answers": [
+        "jump",
+        "jumping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/pole_vault.png",
+      "tags": [
+        "jump",
+        "sport"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "saut à la perche",
+      "usage_count": 6,
+      "semantic_hint": "This is an athletic activity involving height.",
+      "matched_catalog_id": "pole_vault",
+      "image_prompt": "A person jumping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "pull",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "pull",
+      "verb": "pulling",
+      "base_verb": "pull",
+      "acceptable_answers": [
+        "pull",
+        "pulling"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/pull.png",
+      "tags": [
+        "pull",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "tirer",
+      "usage_count": 7,
+      "semantic_hint": "This involves exerting force to move something closer.",
+      "matched_catalog_id": "pull",
+      "image_prompt": "A person pulling in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "pull_up_shorts",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "pull_up_shorts",
+      "verb": "pulling",
+      "base_verb": "pull",
+      "acceptable_answers": [
+        "pull",
+        "pulling"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/pull_up_shorts.png",
+      "tags": [
+        "pull",
+        "shorts",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "remonter le caleçon",
+      "usage_count": 2,
+      "semantic_hint": "This is often done to adjust clothing.",
+      "matched_catalog_id": "pull_up_shorts",
+      "image_prompt": "A person pulling in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "pull_up_skirt",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "pull_up_skirt",
+      "verb": "pulling",
+      "base_verb": "pull",
+      "acceptable_answers": [
+        "pull",
+        "pulling"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/pull_up_skirt.png",
+      "tags": [
+        "pull",
+        "skirt",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "Remonter sa jupe",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "pull_up_skirt",
+      "image_prompt": "A person pulling in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "pulling",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "pulling",
+      "verb": "pulling",
+      "base_verb": "pull",
+      "acceptable_answers": [
+        "pull",
+        "pulling"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/pulling.png",
+      "tags": [
+        "pulling",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "arracher",
+      "usage_count": 1,
+      "semantic_hint": "This action requires strength and direction.",
+      "matched_catalog_id": "pulling",
+      "image_prompt": "A person pulling in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "push",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "push",
+      "verb": "pushing",
+      "base_verb": "push",
+      "acceptable_answers": [
+        "push",
+        "pushing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/push.png",
+      "tags": [
+        "push",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "pousser",
+      "usage_count": 4,
+      "semantic_hint": "This involves applying force to move something away.",
+      "matched_catalog_id": "push",
+      "image_prompt": "A person pushing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "read",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "read",
+      "verb": "reading",
+      "base_verb": "read",
+      "acceptable_answers": [
+        "read",
+        "reading"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/read.png",
+      "tags": [
+        "reading",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "lire",
+      "usage_count": 1,
+      "semantic_hint": "This is a way to gain knowledge or enjoy a story.",
+      "matched_catalog_id": "read",
+      "image_prompt": "A person reading in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "reading_corner",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "reading_corner",
+      "verb": "reading",
+      "base_verb": "read",
+      "acceptable_answers": [
+        "read",
+        "reading"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/reading_corner.png",
+      "tags": [
+        "reading",
+        "corner",
+        "place"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "coin de lecture",
+      "usage_count": 4,
+      "semantic_hint": "This is a quiet place for enjoying books.",
+      "matched_catalog_id": "reading_corner",
+      "image_prompt": "A person reading in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "remove",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "remove",
+      "verb": "removing",
+      "base_verb": "remove",
+      "acceptable_answers": [
+        "remove",
+        "removing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/remove.png",
+      "tags": [
+        "remove",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "enlever",
+      "usage_count": 3,
+      "semantic_hint": "This action involves taking something away.",
+      "matched_catalog_id": "remove",
+      "image_prompt": "A person removing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "ride_a_bike",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "ride_a_bike",
+      "verb": "riding",
+      "base_verb": "ride",
+      "acceptable_answers": [
+        "ride",
+        "riding"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/ride_a_bike.png",
+      "tags": [
+        "bike",
+        "ride"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "monter à vélo",
+      "usage_count": 5,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "ride_a_bike",
+      "image_prompt": "A person riding in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "roasting",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "roasting",
+      "verb": "cooking",
+      "base_verb": "cook",
+      "acceptable_answers": [
+        "cook",
+        "cooking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/roasting.png",
+      "tags": [
+        "roasting",
+        "cooking",
+        "food"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "rôtir",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing with food or drink.",
+      "matched_catalog_id": "roasting",
+      "image_prompt": "A person cooking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "rugby",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "rugby",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/rugby.png",
+      "tags": [
+        "rugby",
+        "sport",
+        "play"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au rugby",
+      "usage_count": 6,
+      "semantic_hint": "engaging in a team sport",
+      "matched_catalog_id": "rugby",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "running",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "running",
+      "verb": "running",
+      "base_verb": "run",
+      "acceptable_answers": [
+        "run",
+        "running"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/running.png",
+      "tags": [
+        "running",
+        "exercise"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "courir",
+      "usage_count": 1,
+      "semantic_hint": "Think about how the person is moving.",
+      "matched_catalog_id": "running",
+      "image_prompt": "A person running in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "running_hand_in_hand",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "running_hand_in_hand",
+      "verb": "running",
+      "base_verb": "run",
+      "acceptable_answers": [
+        "run",
+        "running"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/running_hand_in_hand.png",
+      "tags": [
+        "running",
+        "hands",
+        "together"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "courir main dans la main",
+      "usage_count": 6,
+      "semantic_hint": "moving quickly while holding hands",
+      "matched_catalog_id": "running_hand_in_hand",
+      "image_prompt": "A person running in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "sing_christmas_songs",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "sing_christmas_songs",
+      "verb": "singing",
+      "base_verb": "sing",
+      "acceptable_answers": [
+        "sing",
+        "singing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/sing_christmas_songs.png",
+      "tags": [
+        "sing",
+        "christmas",
+        "songs"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "chanter des chants de Noël",
+      "usage_count": 7,
+      "semantic_hint": "producing musical sounds with the voice",
+      "matched_catalog_id": "sing_christmas_songs",
+      "image_prompt": "A person singing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "sit_down",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "sit_down",
+      "verb": "sitting",
+      "base_verb": "sit",
+      "acceptable_answers": [
+        "sit",
+        "sitting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/sit_down.png",
+      "tags": [
+        "sit",
+        "down",
+        "movement"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "se poser",
+      "usage_count": 5,
+      "semantic_hint": "lowering oneself to a seat",
+      "matched_catalog_id": "sit_down",
+      "image_prompt": "A person sitting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "sitting",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "sitting",
+      "verb": "sitting",
+      "base_verb": "sit",
+      "acceptable_answers": [
+        "sit",
+        "sitting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/sitting.png",
+      "tags": [
+        "sitting",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "être assis",
+      "usage_count": 7,
+      "semantic_hint": "being in a position with the body supported by a surface",
+      "matched_catalog_id": "sitting",
+      "image_prompt": "A person sitting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "sitting_female",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "sitting_female",
+      "verb": "sitting",
+      "base_verb": "sit",
+      "acceptable_answers": [
+        "sit",
+        "sitting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/sitting_female.png",
+      "tags": [
+        "sitting",
+        "female",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "être assise",
+      "usage_count": 5,
+      "semantic_hint": "a woman in a seated position",
+      "matched_catalog_id": "sitting_female",
+      "image_prompt": "A person sitting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "sitting_in_a_circle",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "sitting_in_a_circle",
+      "verb": "sitting",
+      "base_verb": "sit",
+      "acceptable_answers": [
+        "sit",
+        "sitting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/sitting_in_a_circle.png",
+      "tags": [
+        "sitting",
+        "circle",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "s'asseoir en cercle",
+      "usage_count": 5,
+      "semantic_hint": "being in a group while seated",
+      "matched_catalog_id": "sitting_in_a_circle",
+      "image_prompt": "A person sitting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "sitting_on_a_bench",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "sitting_on_a_bench",
+      "verb": "sitting",
+      "base_verb": "sit",
+      "acceptable_answers": [
+        "sit",
+        "sitting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/sitting_on_a_bench.png",
+      "tags": [
+        "sitting",
+        "bench",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "s'asseoir sur un banc",
+      "usage_count": 5,
+      "semantic_hint": "resting on a long seat",
+      "matched_catalog_id": "sitting_on_a_bench",
+      "image_prompt": "A person sitting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "sitting_on_the_floor",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "sitting_on_the_floor",
+      "verb": "sitting",
+      "base_verb": "sit",
+      "acceptable_answers": [
+        "sit",
+        "sitting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/sitting_on_the_floor.png",
+      "tags": [
+        "sitting",
+        "floor",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "s'asseoir par terre",
+      "usage_count": 8,
+      "semantic_hint": "being on the ground in a seated position",
+      "matched_catalog_id": "sitting_on_the_floor",
+      "image_prompt": "A person sitting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "sitting_on_the_toilet",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "sitting_on_the_toilet",
+      "verb": "sitting",
+      "base_verb": "sit",
+      "acceptable_answers": [
+        "sit",
+        "sitting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/sitting_on_the_toilet.png",
+      "tags": [
+        "sitting",
+        "toilet",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "s'asseoir sur les toilettes",
+      "usage_count": 5,
+      "semantic_hint": "using a bathroom fixture while seated",
+      "matched_catalog_id": "sitting_on_the_toilet",
+      "image_prompt": "A person sitting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "sleeping",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "sleeping",
+      "verb": "sleeping",
+      "base_verb": "sleep",
+      "acceptable_answers": [
+        "sleep",
+        "sleeping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/sleeping.png",
+      "tags": [
+        "sleep",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "dormir",
+      "usage_count": 1,
+      "semantic_hint": "Think about how the person is resting.",
+      "matched_catalog_id": "sleeping",
+      "image_prompt": "A person sleeping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "slicing",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "slicing",
+      "verb": "cutting",
+      "base_verb": "cut",
+      "acceptable_answers": [
+        "cut",
+        "cutting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/slicing.png",
+      "tags": [
+        "cutting",
+        "food"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "couper des tranches",
+      "usage_count": 5,
+      "semantic_hint": "Think about what the person is doing with food or drink.",
+      "matched_catalog_id": "slicing",
+      "image_prompt": "A person cutting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "standing",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "standing",
+      "verb": "standing",
+      "base_verb": "stand",
+      "acceptable_answers": [
+        "stand",
+        "standing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/standing.png",
+      "tags": [
+        "standing",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "être debout",
+      "usage_count": 5,
+      "semantic_hint": "being upright on two feet",
+      "matched_catalog_id": "standing",
+      "image_prompt": "A person standing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "sweeping",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "sweeping",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/sweeping.png",
+      "tags": [
+        "sweeping",
+        "cleaning"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "balayer",
+      "usage_count": 2,
+      "semantic_hint": "removing dirt with a broom",
+      "matched_catalog_id": "sweeping",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "swim",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "swim",
+      "verb": "swimming",
+      "base_verb": "swim",
+      "acceptable_answers": [
+        "swim",
+        "swimming"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/swim.png",
+      "tags": [
+        "swim",
+        "action",
+        "water"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "nager",
+      "usage_count": 2,
+      "semantic_hint": "Think about the action someone does in water.",
+      "matched_catalog_id": "swim",
+      "image_prompt": "A person swimming in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "swimming",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "swimming",
+      "verb": "swimming",
+      "base_verb": "swim",
+      "acceptable_answers": [
+        "swim",
+        "swimming"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/swimming.png",
+      "tags": [
+        "swimming",
+        "water",
+        "activity"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "natation",
+      "usage_count": 1,
+      "semantic_hint": "Think about the action someone does in water.",
+      "matched_catalog_id": "swimming",
+      "image_prompt": "A person swimming in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "take_a_walk",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "take_a_walk",
+      "verb": "walking",
+      "base_verb": "walk",
+      "acceptable_answers": [
+        "walk",
+        "walking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/take_a_walk.png",
+      "tags": [
+        "walk",
+        "exercise",
+        "movement"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "se promener",
+      "usage_count": 1,
+      "semantic_hint": "moving at a regular pace on foot",
+      "matched_catalog_id": "take_a_walk",
+      "image_prompt": "A person walking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "talking",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "talking",
+      "verb": "talking",
+      "base_verb": "talk",
+      "acceptable_answers": [
+        "talk",
+        "talking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/talking.png",
+      "tags": [
+        "talking",
+        "communication"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "parler",
+      "usage_count": 2,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "talking",
+      "image_prompt": "A person talking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "talking_on_the_phone",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "talking_on_the_phone",
+      "verb": "talking",
+      "base_verb": "talk",
+      "acceptable_answers": [
+        "talk",
+        "talking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/talking_on_the_phone.png",
+      "tags": [
+        "talking",
+        "phone",
+        "communication"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "parler au téléphone",
+      "usage_count": 3,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "talking_on_the_phone",
+      "image_prompt": "A person talking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "tennis",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "tennis",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/tennis.png",
+      "tags": [
+        "tennis",
+        "sport",
+        "play"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au tennis",
+      "usage_count": 6,
+      "semantic_hint": "engaging in a racket sport",
+      "matched_catalog_id": "tennis",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "throw",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "throw",
+      "verb": "throwing",
+      "base_verb": "throw",
+      "acceptable_answers": [
+        "throw",
+        "throwing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/throw.png",
+      "tags": [
+        "throw",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "lancer",
+      "usage_count": 4,
+      "semantic_hint": "propelling an object through the air",
+      "matched_catalog_id": "throw",
+      "image_prompt": "A person throwing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "throw_a_dart",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "throw_a_dart",
+      "verb": "throwing",
+      "base_verb": "throw",
+      "acceptable_answers": [
+        "throw",
+        "throwing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/throw_a_dart.png",
+      "tags": [
+        "throw",
+        "dart",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "lancer une fléchette",
+      "usage_count": 4,
+      "semantic_hint": "aiming and propelling a small object",
+      "matched_catalog_id": "throw_a_dart",
+      "image_prompt": "A person throwing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "throwing",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "throwing",
+      "verb": "throwing",
+      "base_verb": "throw",
+      "acceptable_answers": [
+        "throw",
+        "throwing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/throwing.png",
+      "tags": [
+        "throwing",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jeter",
+      "usage_count": 2,
+      "semantic_hint": "sending something through the air",
+      "matched_catalog_id": "throwing",
+      "image_prompt": "A person throwing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "to_carry",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "to_carry",
+      "verb": "carrying",
+      "base_verb": "carry",
+      "acceptable_answers": [
+        "carry",
+        "carrying"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/to_carry.png",
+      "tags": [
+        "carry",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "porter",
+      "usage_count": 3,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "to_carry",
+      "image_prompt": "A person carrying in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "to_dance",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "to_dance",
+      "verb": "dancing",
+      "base_verb": "dance",
+      "acceptable_answers": [
+        "dance",
+        "dancing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/to_dance.png",
+      "tags": [
+        "dance",
+        "movement",
+        "activity"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "danser",
+      "usage_count": 1,
+      "semantic_hint": "Think about how the person is moving.",
+      "matched_catalog_id": "to_dance",
+      "image_prompt": "A person dancing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "to_eat",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "to_eat",
+      "verb": "eating",
+      "base_verb": "eat",
+      "acceptable_answers": [
+        "eat",
+        "eating"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/to_eat.png",
+      "tags": [
+        "food",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "manger",
+      "usage_count": 3,
+      "semantic_hint": "taking food into the mouth",
+      "matched_catalog_id": "to_eat",
+      "image_prompt": "A person eating in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "to_grow",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "to_grow",
+      "verb": "planting",
+      "base_verb": "plant",
+      "acceptable_answers": [
+        "plant",
+        "planting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/to_grow.png",
+      "tags": [
+        "growth",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "grandir",
+      "usage_count": 2,
+      "semantic_hint": "putting something in the ground to develop",
+      "matched_catalog_id": "to_grow",
+      "image_prompt": "A person planting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "to_revive",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "to_revive",
+      "verb": "planting",
+      "base_verb": "plant",
+      "acceptable_answers": [
+        "plant",
+        "planting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/to_revive.png",
+      "tags": [
+        "action",
+        "health"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "réanimer",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "to_revive",
+      "image_prompt": "A person planting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "to_season",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "to_season",
+      "verb": "cooking",
+      "base_verb": "cook",
+      "acceptable_answers": [
+        "cook",
+        "cooking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/to_season.png",
+      "tags": [
+        "seasoning",
+        "cooking",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "assaisonner",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing with food or drink.",
+      "matched_catalog_id": "to_season",
+      "image_prompt": "A person cooking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "to_sit",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "to_sit",
+      "verb": "sitting",
+      "base_verb": "sit",
+      "acceptable_answers": [
+        "sit",
+        "sitting"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/to_sit.png",
+      "tags": [
+        "sit",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "asseoir",
+      "usage_count": 2,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "to_sit",
+      "image_prompt": "A person sitting in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "to_sleep",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "to_sleep",
+      "verb": "sleeping",
+      "base_verb": "sleep",
+      "acceptable_answers": [
+        "sleep",
+        "sleeping"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/to_sleep.png",
+      "tags": [
+        "sleep",
+        "rest",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "coucher",
+      "usage_count": 3,
+      "semantic_hint": "Think about how the person is resting.",
+      "matched_catalog_id": "to_sleep",
+      "image_prompt": "A person sleeping in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "to_vacuum",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "to_vacuum",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/to_vacuum.png",
+      "tags": [
+        "vacuum",
+        "cleaning",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "aspirer",
+      "usage_count": 2,
+      "semantic_hint": "removing dirt from a surface",
+      "matched_catalog_id": "to_vacuum",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "to_wash_with_soap",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "to_wash_with_soap",
+      "verb": "washing",
+      "base_verb": "wash",
+      "acceptable_answers": [
+        "wash",
+        "washing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/to_wash_with_soap.png",
+      "tags": [
+        "wash",
+        "soap",
+        "hygiene"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "savonner",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "to_wash_with_soap",
+      "image_prompt": "A person washing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "vacuuming",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "vacuuming",
+      "verb": "cleaning",
+      "base_verb": "clean",
+      "acceptable_answers": [
+        "clean",
+        "cleaning"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/vacuuming.png",
+      "tags": [
+        "cleaning",
+        "household"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "passer l'aspirateur",
+      "usage_count": 7,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "vacuuming",
+      "image_prompt": "A person cleaning in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "video_game",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "video_game",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/video_game.png",
+      "tags": [
+        "video game",
+        "play",
+        "fun"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer à la console vidéo",
+      "usage_count": 10,
+      "semantic_hint": "engaging in a fun activity",
+      "matched_catalog_id": "video_game",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "volleyball",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "volleyball",
+      "verb": "playing",
+      "base_verb": "play",
+      "acceptable_answers": [
+        "play",
+        "playing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/volleyball.png",
+      "tags": [
+        "volleyball",
+        "sport",
+        "play"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "jouer au volley-ball",
+      "usage_count": 6,
+      "semantic_hint": "participating in a team sport",
+      "matched_catalog_id": "volleyball",
+      "image_prompt": "A person playing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "walking_the_dog",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "walking_the_dog",
+      "verb": "walking",
+      "base_verb": "walk",
+      "acceptable_answers": [
+        "walk",
+        "walking"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/walking_the_dog.png",
+      "tags": [
+        "walking",
+        "dog",
+        "pet"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "promener le chien",
+      "usage_count": 3,
+      "semantic_hint": "taking a pet outside for exercise",
+      "matched_catalog_id": "walking_the_dog",
+      "image_prompt": "A person walking in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "wash_hair",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "wash_hair",
+      "verb": "washing",
+      "base_verb": "wash",
+      "acceptable_answers": [
+        "wash",
+        "washing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/wash_hair.png",
+      "tags": [
+        "wash",
+        "hair",
+        "hygiene"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "se laver les cheveux",
+      "usage_count": 3,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "wash_hair",
+      "image_prompt": "A person washing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "wash_hands",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "wash_hands",
+      "verb": "washing",
+      "base_verb": "wash",
+      "acceptable_answers": [
+        "wash",
+        "washing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/wash_hands.png",
+      "tags": [
+        "wash",
+        "hands",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "laver les mains",
+      "usage_count": 4,
+      "semantic_hint": "cleaning hands with soap and water",
+      "matched_catalog_id": "wash_hands",
+      "image_prompt": "A person washing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "wash_the_car",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "wash_the_car",
+      "verb": "washing",
+      "base_verb": "wash",
+      "acceptable_answers": [
+        "wash",
+        "washing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/wash_the_car.png",
+      "tags": [
+        "wash",
+        "car",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "laver la voiture",
+      "usage_count": 4,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "wash_the_car",
+      "image_prompt": "A person washing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "wash_the_dishes",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "wash_the_dishes",
+      "verb": "washing",
+      "base_verb": "wash",
+      "acceptable_answers": [
+        "wash",
+        "washing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/wash_the_dishes.png",
+      "tags": [
+        "wash",
+        "dishes",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "laver les assiettes",
+      "usage_count": 5,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "wash_the_dishes",
+      "image_prompt": "A person washing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "wash_the_face",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "wash_the_face",
+      "verb": "washing",
+      "base_verb": "wash",
+      "acceptable_answers": [
+        "wash",
+        "washing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/wash_the_face.png",
+      "tags": [
+        "wash",
+        "face",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "laver le visage",
+      "usage_count": 3,
+      "semantic_hint": "cleaning the front of the head",
+      "matched_catalog_id": "wash_the_face",
+      "image_prompt": "A person washing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "wash_the_hair",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "wash_the_hair",
+      "verb": "washing",
+      "base_verb": "wash",
+      "acceptable_answers": [
+        "wash",
+        "washing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/wash_the_hair.png",
+      "tags": [
+        "wash",
+        "hair",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "laver les cheveux",
+      "usage_count": 3,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "wash_the_hair",
+      "image_prompt": "A person washing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "wash_the_laundry",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "wash_the_laundry",
+      "verb": "washing",
+      "base_verb": "wash",
+      "acceptable_answers": [
+        "wash",
+        "washing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/wash_the_laundry.png",
+      "tags": [
+        "wash",
+        "laundry",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "laver le linge",
+      "usage_count": 3,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "wash_the_laundry",
+      "image_prompt": "A person washing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "wash_windows",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "wash_windows",
+      "verb": "washing",
+      "base_verb": "wash",
+      "acceptable_answers": [
+        "wash",
+        "washing"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/wash_windows.png",
+      "tags": [
+        "wash",
+        "windows",
+        "action"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "laver les vitres",
+      "usage_count": 2,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "wash_windows",
+      "image_prompt": "A person washing in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    },
+    {
+      "source_id": "watering",
+      "keep": true,
+      "exclude_reason": null,
+      "technique": "action_verb_naming",
+      "id": "watering",
+      "verb": "watering",
+      "base_verb": "water",
+      "acceptable_answers": [
+        "water",
+        "watering"
+      ],
+      "subject": "person",
+      "image": "arasaac_sentence_images/watering.png",
+      "tags": [
+        "watering",
+        "action",
+        "plants"
+      ],
+      "difficulty": 1,
+      "source": "arasaac",
+      "raw_label": "arroser",
+      "usage_count": 1,
+      "semantic_hint": "Think about what the person is doing.",
+      "matched_catalog_id": "watering",
+      "image_prompt": "A person watering in a clear simple therapy-style image, centered, easy to recognise, plain background."
+    }
+  ]
+}

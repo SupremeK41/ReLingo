@@ -71,6 +71,7 @@ SUPPORTED_TECHNIQUE_IDS = {
     "naming_with_cues",
     "sentence_repetition",
     "semantic_feature_analysis",
+    "action_verb_naming",
 }
 
 DEFAULT_FUNCTION_WORDS = {
@@ -91,7 +92,7 @@ DEFAULT_FUNCTION_WORDS = {
 
 
 # =========================================================
-# Text normalisation helpers
+# Text helpers
 # =========================================================
 
 def normalize_text(text: str | None) -> str:
@@ -167,8 +168,99 @@ def derive_targets_from_sentence(sentence: str) -> tuple[list[str], list[str]]:
     return content, function
 
 
+def _collapse_consecutive_duplicate_tokens(tokens: list[str], max_repeat: int = 2) -> list[str]:
+    if not tokens:
+        return []
+
+    out: list[str] = []
+    prev = None
+    repeat_count = 0
+
+    for token in tokens:
+        if token == prev:
+            repeat_count += 1
+        else:
+            prev = token
+            repeat_count = 1
+
+        if repeat_count <= max_repeat:
+            out.append(token)
+
+    return out
+
+
+def _collapse_repeated_ngrams(tokens: list[str], max_ngram: int = 3) -> list[str]:
+    """
+    Whisper can sometimes loop short phrases:
+    - reading reading reading
+    - the man is running the man is running
+    Keep only the first occurrence of the repeated chunk.
+    """
+    if not tokens:
+        return []
+
+    out: list[str] = []
+    i = 0
+    total = len(tokens)
+
+    while i < total:
+        collapsed = False
+        max_n = min(max_ngram, (total - i) // 2)
+
+        for n in range(max_n, 0, -1):
+            chunk = tokens[i:i + n]
+            repeats = 1
+
+            while i + (repeats + 1) * n <= total and tokens[i + repeats * n:i + (repeats + 1) * n] == chunk:
+                repeats += 1
+
+            if repeats >= 2:
+                out.extend(chunk)
+                i += repeats * n
+                collapsed = True
+                break
+
+        if not collapsed:
+            out.append(tokens[i])
+            i += 1
+
+    return out
+
+
+def clean_transcript_for_display(text: str | None, max_words: int = 25) -> str:
+    """
+    Keep the visible transcript close to what the user actually said.
+    This is display cleanup only. Matching still uses the cleaned transcript text,
+    but helper prompts should not appear here.
+    """
+    text = re.sub(r"\s+", " ", (text or "").strip())
+    if not text:
+        return ""
+
+    lowered = text.lower()
+    for phrase in _PROMPT_LEAK_PHRASES:
+        lowered = lowered.replace(phrase, " ")
+
+    lowered = re.sub(r"\s+", " ", lowered).strip()
+    if not lowered:
+        return ""
+
+    tokens = re.findall(r"[a-z0-9']+", lowered)
+    if not tokens:
+        return ""
+
+    tokens = _collapse_consecutive_duplicate_tokens(tokens, max_repeat=2)
+    tokens = _collapse_repeated_ngrams(tokens, max_ngram=3)
+    tokens = _collapse_consecutive_duplicate_tokens(tokens, max_repeat=2)
+
+    if len(tokens) > max_words:
+        tokens = tokens[:max_words]
+
+    return " ".join(tokens).strip()
+
+
 # =========================================================
-# Matching, distance and phonetics
+# Matching / distance / phonetics
 # =========================================================
 
 def levenshtein(a: str, b: str) -> int:
@@ -259,7 +351,7 @@ def token_matches_target(
 
 
 # =========================================================
-# Phrase candidate helpers
+# Phrase matching helpers
 # =========================================================
 
 def build_phrase_candidates(transcript_norm: str, target_text: str) -> list[str]:
@@ -392,7 +484,184 @@ def extract_max_no_speech_prob(result: dict) -> float:
 
 
 # =========================================================
-# SFA evaluation helpers
+# Target pool helpers
+# Keep this a bit more forgiving for mild aphasia.
+# =========================================================
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        cleaned = normalize_text(value)
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            out.append(cleaned)
+
+    return out
+
+
+def _ends_with_doubled_consonant(word: str) -> bool:
+    if len(word) < 2:
+        return False
+    return word[-1] == word[-2] and word[-1] in "bcdfghjklmnpqrstvwxyz"
+
+
+def _looks_like_short_cvc(word: str) -> bool:
+    if len(word) < 3:
+        return False
+
+    vowels = "aeiou"
+    last_three = word[-3:]
+
+    return (
+        last_three[0] not in vowels
+        and last_three[1] in vowels
+        and last_three[2] not in vowels
+        and last_three[2] not in {"w", "x", "y"}
+    )
+
+
+def _expand_action_answer_variants(answer: str) -> list[str]:
+    """
+    Small helper so action naming can accept things like:
+    run / running / runs
+    write / writing
+    """
+    answer = normalize_text(answer)
+    if not answer:
+        return []
+
+    variants: list[str] = [answer]
+
+    if answer.endswith("ing") and len(answer) > 4:
+        stem = answer[:-3]
+        variants.append(stem)
+
+        if _ends_with_doubled_consonant(stem):
+            variants.append(stem[:-1])
+
+        variants.append(stem + "e")
+
+        if answer.endswith("ying") and len(answer) > 5:
+            variants.append(answer[:-4] + "ie")
+
+    if answer.endswith("ed") and len(answer) > 3:
+        stem = answer[:-2]
+        variants.append(stem)
+
+        if _ends_with_doubled_consonant(stem):
+            variants.append(stem[:-1])
+
+        variants.append(stem + "e")
+
+        if answer.endswith("ied") and len(answer) > 4:
+            variants.append(answer[:-3] + "y")
+
+    if answer.endswith("ies") and len(answer) > 3:
+        variants.append(answer[:-3] + "y")
+
+    if answer.endswith("es") and len(answer) > 3:
+        variants.append(answer[:-2])
+
+    if answer.endswith("s") and len(answer) > 2:
+        variants.append(answer[:-1])
+
+    if not answer.endswith("ing"):
+        if answer.endswith("ie") and len(answer) > 2:
+            variants.append(answer[:-2] + "ying")
+        elif answer.endswith("e") and len(answer) > 2:
+            variants.append(answer[:-1] + "ing")
+        else:
+            variants.append(answer + "ing")
+            if _looks_like_short_cvc(answer):
+                variants.append(answer + answer[-1] + "ing")
+
+        if answer.endswith("y") and len(answer) > 1:
+            variants.append(answer[:-1] + "ies")
+        else:
+            variants.append(answer + "s")
+            variants.append(answer + "es")
+
+    return _dedupe_preserve_order(variants)
+
+
+def build_target_pool(
+    primary_target: str | None,
+    acceptable_answers_raw: str | None = None,
+    expand_action_variants: bool = False,
+) -> list[str]:
+    values: list[str] = []
+
+    if primary_target:
+        values.append(primary_target)
+
+    if acceptable_answers_raw:
+        values.extend(part.strip() for part in acceptable_answers_raw.split(",") if part.strip())
+
+    values = _dedupe_preserve_order(values)
+
+    if not expand_action_variants:
+        return values
+
+    expanded: list[str] = []
+    for value in values:
+        expanded.extend(_expand_action_answer_variants(value))
+
+    return _dedupe_preserve_order(expanded)
+
+
+def best_match_against_target_pool(
+    transcript_norm: str,
+    target_pool: list[str],
+    rel_cutoff: float = 0.34,
+) -> tuple[bool | None, str | None, int | None, float | None, bool | None]:
+    if not transcript_norm or not target_pool:
+        return None, None, None, None, None
+
+    best_target = None
+    best_match = None
+    best_tuple = None
+
+    for target in target_pool:
+        candidates = build_phrase_candidates(transcript_norm, target)
+
+        for candidate in candidates:
+            matched, dist, rel, phon = is_match_phonetic(candidate, target)
+            score_tuple = (0 if matched else 1, rel, dist)
+
+            if best_tuple is None or score_tuple < best_tuple:
+                best_tuple = score_tuple
+                best_target = target
+                best_match = (matched, dist, rel, phon)
+
+    if best_match is None:
+        return None, None, None, None, None
+
+    raw_matched, dist, rel, phon = best_match
+    final_matched = bool(raw_matched or rel <= rel_cutoff)
+
+    return final_matched, best_target, dist, rel, bool(phon)
+
+
+# =========================================================
+# Shared whisper kwargs
+# =========================================================
+
+def _build_whisper_kwargs() -> dict:
+    return {
+        "language": "en",
+        "task": "transcribe",
+        "temperature": 0,
+        "condition_on_previous_text": False,
+        "no_speech_threshold": 0.6,
+        "logprob_threshold": -1.0,
+        "compression_ratio_threshold": 2.4,
+    }
+
+
+# =========================================================
+# SFA eval helpers
 # =========================================================
 
 def _get_sfa_eval_provider() -> str:
@@ -677,7 +946,7 @@ def _evaluate_sfa_response(
 
 
 # =========================================================
-# User and profile helpers
+# User / profile helpers
 # =========================================================
 
 @app.get("/")
@@ -758,9 +1027,16 @@ async def _get_item_image_from_active_pack(
 
     for item in items:
         item_word = normalize_text(item.get("word"))
+        item_verb = normalize_text(item.get("verb"))
+        item_base_verb = normalize_text(item.get("base_verb"))
         item_sentence = normalize_text(item.get("sentence"))
 
-        if target_norm and (item_word == target_norm or item_sentence == target_norm):
+        if target_norm and (
+            item_word == target_norm
+            or item_verb == target_norm
+            or item_base_verb == target_norm
+            or item_sentence == target_norm
+        ):
             image = item.get("image")
             if image:
                 return image
@@ -1155,6 +1431,23 @@ class ScorePayload(BaseModel):
     items: list[ScoreItem] | None = None
 
 
+class ProgressAiEvaluationRequest(BaseModel):
+    target: str
+    summary: dict
+    profile: dict | None = None
+
+
+class ProgressAiEvaluationResponse(BaseModel):
+    target: str
+    target_label: str
+    summary: str
+    strengths: list[str]
+    areas_to_strengthen: list[str]
+    technique_observations: list[str]
+    next_focus: list[str]
+    encouraging_note: str
+
+
 @app.post("/api/score")
 async def update_score(
     payload: ScorePayload,
@@ -1371,7 +1664,8 @@ async def update_score(
 
 
 # =========================================================
-# Speech-to-text endpoint
+# Generic speech-to-text endpoint
+# Still used by image naming and cue-based naming.
 # =========================================================
 
 @app.post("/api/speech-to-text")
@@ -1379,6 +1673,7 @@ async def speech_to_text(
     audio: UploadFile = File(...),
     vocab: str | None = Form(default=None),
     target: str | None = Form(default=None),
+    acceptable_answers: str | None = Form(default=None),
     attempt_num: int | None = Form(default=None),
     cue_shown: int | None = Form(default=None),
 ):
@@ -1391,25 +1686,20 @@ async def speech_to_text(
         file_size = os.path.getsize(temp_path)
         too_short = file_size < _MIN_WEBM_BYTES
 
-        kwargs = {
-            "language": "en",
-            "task": "transcribe",
-            "temperature": 0,
-            "condition_on_previous_text": False,
-            "no_speech_threshold": 0.6,
-            "logprob_threshold": -1.0,
-            "compression_ratio_threshold": 2.4,
-        }
+        kwargs = _build_whisper_kwargs()
 
         vocab_list: list[str] = []
         if vocab:
-            vocab_list = [value.strip() for value in vocab.split(",") if value.strip()][:50]
+            vocab_list = _dedupe_preserve_order(
+                [value.strip() for value in vocab.split(",") if value.strip()]
+            )[:12]
 
         if vocab_list and not too_short:
             kwargs["initial_prompt"] = "Words: " + ", ".join(vocab_list)
 
         result = whisper_model.transcribe(temp_path, **kwargs)
-        text = (result.get("text") or "").strip()
+        raw_text = (result.get("text") or "").strip()
+        text = clean_transcript_for_display(raw_text)
         transcript_norm = normalize_text(text)
 
         max_no_speech_prob = extract_max_no_speech_prob(result)
@@ -1418,6 +1708,7 @@ async def speech_to_text(
             return {
                 "text": "",
                 "matched": False if target else None,
+                "matched_target": None,
                 "best_guess": None,
                 "distance": None,
                 "rel_distance": None,
@@ -1433,6 +1724,7 @@ async def speech_to_text(
             return {
                 "text": "",
                 "matched": False if target else None,
+                "matched_target": None,
                 "best_guess": None,
                 "distance": None,
                 "rel_distance": None,
@@ -1444,8 +1736,6 @@ async def speech_to_text(
                 "no_speech_prob": max_no_speech_prob,
                 "prompt_leak": True,
             }
-
-        candidates = build_phrase_candidates(transcript_norm, target or "")
 
         best_guess = None
         best_dist = 10**9
@@ -1472,23 +1762,20 @@ async def speech_to_text(
                         best_guess_matched = matched
 
         matched_vs_target = None
+        matched_target = None
         dist_vs_target = None
         rel_vs_target = None
         phon_vs_target = None
 
         if target and transcript_norm:
-            best_target_tuple = None
-
-            for candidate in candidates:
-                matched, dist, rel, phon = is_match_phonetic(candidate, target)
-                score_tuple = (0 if matched else 1, rel, dist)
-
-                if best_target_tuple is None or score_tuple < best_target_tuple:
-                    best_target_tuple = score_tuple
-                    matched_vs_target = bool(matched)
-                    dist_vs_target = dist
-                    rel_vs_target = rel
-                    phon_vs_target = bool(phon)
+            target_pool = build_target_pool(
+                target,
+                acceptable_answers,
+                expand_action_variants=bool(acceptable_answers),
+            )
+            matched_vs_target, matched_target, dist_vs_target, rel_vs_target, phon_vs_target = (
+                best_match_against_target_pool(transcript_norm, target_pool, rel_cutoff=0.34)
+            )
 
         final_matched = (
             matched_vs_target
@@ -1499,6 +1786,7 @@ async def speech_to_text(
         return {
             "text": text,
             "matched": final_matched,
+            "matched_target": matched_target,
             "best_guess": best_guess,
             "distance": dist_vs_target if dist_vs_target is not None else (best_dist if vocab_list and transcript_norm else None),
             "rel_distance": rel_vs_target if rel_vs_target is not None else (best_rel if vocab_list and transcript_norm else None),
@@ -1519,7 +1807,121 @@ async def speech_to_text(
 
 
 # =========================================================
-# Semantic feature analysis evaluation
+# Action verb naming eval
+# Same idea as image naming, but it accepts verb variants too.
+# Do not expose helper-prompt guesses to the frontend.
+# =========================================================
+
+@app.post("/api/action-verb-eval")
+async def action_verb_eval(
+    audio: UploadFile = File(...),
+    target_verb: str = Form(...),
+    acceptable_answers: str | None = Form(default=None),
+    vocab: str | None = Form(default=None),
+    semantic_hint: str | None = Form(default=None),
+    tags: str | None = Form(default=None),
+    attempt_num: int | None = Form(default=None),
+    cue_shown: int | None = Form(default=None),
+):
+    temp_path = f"{TEMP_AUDIO_DIR}/{uuid.uuid4().hex}.webm"
+
+    try:
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(audio.file, buffer)
+
+        file_size = os.path.getsize(temp_path)
+        too_short = file_size < _MIN_WEBM_BYTES
+
+        kwargs = _build_whisper_kwargs()
+
+        _ = _dedupe_preserve_order(
+            [value.strip() for value in (vocab or "").split(",") if value.strip()]
+        )[:10]
+
+        target_pool = build_target_pool(
+            target_verb,
+            acceptable_answers,
+            expand_action_variants=True,
+        )
+
+        result = whisper_model.transcribe(temp_path, **kwargs)
+        raw_text = (result.get("text") or "").strip()
+        text = clean_transcript_for_display(raw_text)
+        transcript_norm = normalize_text(text)
+
+        max_no_speech_prob = extract_max_no_speech_prob(result)
+
+        if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
+            return {
+                "text": "",
+                "matched": False,
+                "matched_target": None,
+                "best_guess": None,
+                "distance": None,
+                "rel_distance": None,
+                "phonetic_used": None,
+                "target": target_verb,
+                "acceptable_answers": target_pool,
+                "attempt_num": attempt_num,
+                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+                "too_short": too_short,
+                "no_speech_prob": max_no_speech_prob,
+            }
+
+        if any(phrase in transcript_norm for phrase in _PROMPT_LEAK_PHRASES):
+            return {
+                "text": "",
+                "matched": False,
+                "matched_target": None,
+                "best_guess": None,
+                "distance": None,
+                "rel_distance": None,
+                "phonetic_used": None,
+                "target": target_verb,
+                "acceptable_answers": target_pool,
+                "attempt_num": attempt_num,
+                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+                "too_short": False,
+                "no_speech_prob": max_no_speech_prob,
+                "prompt_leak": True,
+            }
+
+        matched, matched_target, dist, rel, phon = best_match_against_target_pool(
+            transcript_norm,
+            target_pool,
+            rel_cutoff=0.34,
+        )
+
+        final_matched = bool(matched) if matched is not None else False
+
+        return {
+            "text": text,
+            "matched": final_matched,
+            "matched_target": matched_target,
+            "best_guess": None,
+            "distance": dist,
+            "rel_distance": rel,
+            "phonetic_used": phon,
+            "target": target_verb,
+            "acceptable_answers": target_pool,
+            "attempt_num": attempt_num,
+            "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+            "too_short": False,
+            "no_speech_prob": max_no_speech_prob,
+        }
+
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=f"Action verb evaluation failed: {str(error)}")
+
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+# =========================================================
+# Semantic feature analysis eval
+# Keep transcript based on what was actually spoken.
+# Let the later semantic evaluator do the inference.
 # =========================================================
 
 @app.post("/api/sfa-eval")
@@ -1541,33 +1943,15 @@ async def sfa_eval(
         file_size = os.path.getsize(temp_path)
         too_short = file_size < _MIN_WEBM_BYTES
 
-        kwargs = {
-            "language": "en",
-            "task": "transcribe",
-            "temperature": 0,
-            "condition_on_previous_text": False,
-            "no_speech_threshold": 0.6,
-            "logprob_threshold": -1.0,
-            "compression_ratio_threshold": 2.4,
-        }
+        kwargs = _build_whisper_kwargs()
 
-        candidate_words = []
-        if vocab:
-            candidate_words = [value.strip() for value in vocab.split(",") if value.strip()][:50]
-
-        prompt_parts = []
-        if candidate_words:
-            prompt_parts.append("Possible words: " + ", ".join(candidate_words[:30]))
-        if cue_shown and semantic_hint:
-            prompt_parts.append("Hint context: " + semantic_hint.strip())
-        if tags:
-            prompt_parts.append("Related tags: " + tags.strip())
-
-        if prompt_parts and not too_short:
-            kwargs["initial_prompt"] = " | ".join(prompt_parts)
+        candidate_words = _dedupe_preserve_order(
+            [value.strip() for value in (vocab or "").split(",") if value.strip()]
+        )[:12]
 
         result = whisper_model.transcribe(temp_path, **kwargs)
-        text = (result.get("text") or "").strip()
+        raw_text = (result.get("text") or "").strip()
+        text = clean_transcript_for_display(raw_text, max_words=35)
         transcript_norm = normalize_text(text)
 
         max_no_speech_prob = extract_max_no_speech_prob(result)
@@ -1644,7 +2028,7 @@ async def sfa_eval(
 
 
 # =========================================================
-# Sentence repetition evaluation
+# Sentence repetition eval
 # =========================================================
 
 @app.post("/api/sentence-eval")
@@ -1674,7 +2058,8 @@ async def sentence_eval(
             compression_ratio_threshold=2.4,
         )
 
-        text = (result.get("text") or "").strip()
+        raw_text = (result.get("text") or "").strip()
+        text = clean_transcript_for_display(raw_text, max_words=40)
         transcript_norm = normalize_text(text)
         target_norm = normalize_text(target_sentence)
 
@@ -1781,7 +2166,7 @@ async def sentence_eval(
 
 
 # =========================================================
-# Optional feedback generation
+# Small GPT feedback endpoint
 # =========================================================
 
 @app.post("/api/speech-feedback")
@@ -1814,6 +2199,391 @@ async def speech_feedback(userText: str = Form(...), correctAnswer: str = Form(.
 
     except Exception as error:
         raise HTTPException(status_code=500, detail=f"GPT feedback failed: {str(error)}")
+
+
+# =========================================================
+# AI progress evaluation helpers
+# =========================================================
+
+def _technique_label(technique_id: str) -> str:
+    labels = {
+        "overall": "Overall",
+        "image_naming": "Image Naming",
+        "naming_with_cues": "Naming with Cues",
+        "sentence_repetition": "Sentence Repetition",
+        "semantic_feature_analysis": "Semantic Feature Analysis",
+        "action_verb_naming": "Action Verb Naming",
+    }
+    return labels.get(technique_id, technique_id.replace("_", " ").title())
+
+
+def _safe_round(value, digits=2):
+    try:
+        return round(float(value), digits)
+    except Exception:
+        return 0.0
+
+
+def _build_progress_eval_context(target: str, summary: dict, profile: dict | None = None) -> dict:
+    techniques = summary.get("techniques") or {}
+    technique_history = summary.get("technique_history") or {}
+    item_analytics = summary.get("item_analytics") or {}
+
+    daily_points = summary.get("daily_points") or []
+
+    overall_context = {
+        "recent_points": daily_points,
+        "total_days_active_in_last_7": sum(1 for day in daily_points if (day.get("sessions") or 0) > 0),
+        "total_points_last_7": sum(int(day.get("points") or 0) for day in daily_points),
+        "total_sessions_last_7": sum(int(day.get("sessions") or 0) for day in daily_points),
+        "hardest_items": (item_analytics.get("hardest_items") or [])[:5],
+        "most_retried_items": (item_analytics.get("most_retried_items") or [])[:5],
+    }
+
+    if target == "overall":
+        technique_snapshots = []
+
+        for technique_id, row in techniques.items():
+            technique_snapshots.append(
+                {
+                    "technique_id": technique_id,
+                    "technique_label": _technique_label(technique_id),
+                    "sessions_played": int(row.get("sessions_played") or 0),
+                    "total_items": int(row.get("total_items") or 0),
+                    "first_try_accuracy": _safe_round(row.get("first_try_accuracy"), 4),
+                    "avg_attempts_per_item": _safe_round(row.get("avg_attempts_per_item"), 2),
+                    "cue_usage_rate": _safe_round(row.get("cue_usage_rate"), 4),
+                    "lifetime_avg_sentence_accuracy": _safe_round(row.get("lifetime_avg_sentence_accuracy"), 4),
+                    "correct_first": int(row.get("correct_first") or 0),
+                    "correct_second": int(row.get("correct_second") or 0),
+                    "correct_after_cue": int(row.get("correct_after_cue") or 0),
+                    "incorrect": int(row.get("incorrect") or 0),
+                }
+            )
+
+        return {
+            "target": "overall",
+            "target_label": "Overall",
+            "overall": overall_context,
+            "techniques": technique_snapshots,
+            "profile": profile or {},
+        }
+
+    target_row = techniques.get(target) or {}
+    target_history = technique_history.get(target) or []
+    target_analytics = ((item_analytics.get("by_technique") or {}).get(target) or {})
+
+    return {
+        "target": target,
+        "target_label": _technique_label(target),
+        "overall": overall_context,
+        "technique": {
+            "technique_id": target,
+            "technique_label": _technique_label(target),
+            "sessions_played": int(target_row.get("sessions_played") or 0),
+            "total_items": int(target_row.get("total_items") or 0),
+            "total_exp": int(target_row.get("total_exp") or 0),
+            "best_session_points": int(target_row.get("best_session_points") or 0),
+            "first_try_accuracy": _safe_round(target_row.get("first_try_accuracy"), 4),
+            "avg_attempts_per_item": _safe_round(target_row.get("avg_attempts_per_item"), 2),
+            "cue_usage_rate": _safe_round(target_row.get("cue_usage_rate"), 4),
+            "lifetime_avg_sentence_accuracy": _safe_round(target_row.get("lifetime_avg_sentence_accuracy"), 4),
+            "best_sentence_accuracy": _safe_round(target_row.get("best_sentence_accuracy"), 4),
+            "correct_first": int(target_row.get("correct_first") or 0),
+            "correct_second": int(target_row.get("correct_second") or 0),
+            "correct_after_cue": int(target_row.get("correct_after_cue") or 0),
+            "incorrect": int(target_row.get("incorrect") or 0),
+            "history_last_7": target_history,
+            "hardest_items": (target_analytics.get("hardest_items") or [])[:5],
+            "most_retried_items": (target_analytics.get("most_retried_items") or [])[:5],
+            "most_cue_dependent_items": (target_analytics.get("most_cue_dependent_items") or [])[:5],
+            "weakest_sentence_items": (target_analytics.get("weakest_sentence_items") or [])[:5],
+        },
+        "profile": profile or {},
+    }
+
+
+def _build_progress_eval_prompts(context: dict) -> tuple[str, str]:
+    system_prompt = """
+You are a supportive AI assistant for a stroke recovery speech therapy app.
+
+Your job is to summarise progress in a clinically sensible, encouraging, and non-judgmental way.
+
+Important tone rules:
+- Be supportive and constructive.
+- Do not frame slower progress as failure.
+- Do not sound harsh, cold, or overly clinical.
+- Respect that recovery can vary from day to day.
+- Prefer phrases like:
+  - "showing progress in"
+  - "areas to strengthen"
+  - "benefited from support"
+  - "may need a little more practice"
+  - "steady practice may help"
+- Never shame the user.
+- Never say the user is doing badly or failing.
+- Keep observations grounded in the data provided.
+
+Return STRICT JSON ONLY in this exact shape:
+{
+  "summary": "string",
+  "strengths": ["string", "string"],
+  "areas_to_strengthen": ["string", "string"],
+  "technique_observations": ["string", "string"],
+  "next_focus": ["string", "string"],
+  "encouraging_note": "string"
+}
+
+Rules:
+- Use short, clear, human wording.
+- summary should be 2 to 4 sentences.
+- Each list should contain 2 to 4 concise bullet-style items.
+- encouraging_note should be warm and supportive, 1 to 2 sentences.
+- Base the response only on the provided data.
+- Return JSON only. No markdown.
+""".strip()
+
+    user_prompt = f"""
+Create a progress evaluation for this target:
+{context.get("target_label")}
+
+Here is the structured progress data:
+{json.dumps(context, ensure_ascii=False, indent=2)}
+
+Return JSON only.
+""".strip()
+
+    return system_prompt, user_prompt
+
+
+def _generate_progress_eval_with_openai(context: dict) -> dict:
+    system_prompt, user_prompt = _build_progress_eval_prompts(context)
+
+    response = client.chat.completions.create(
+        model=os.getenv("OPENAI_TEXT_MODEL", "gpt-4o-mini"),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.3,
+    )
+
+    content = (response.choices[0].message.content or "").strip()
+    return _extract_json(content)
+
+
+def _generate_progress_eval_with_local_llm(context: dict) -> dict:
+    system_prompt, user_prompt = _build_progress_eval_prompts(context)
+
+    return _ollama_chat_json(
+        model=_get_local_llm_model(),
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=0.3,
+    )
+
+
+def _normalise_progress_eval_payload(target: str, payload: dict) -> dict:
+    return {
+        "target": target,
+        "target_label": _technique_label(target),
+        "summary": str(payload.get("summary") or "").strip(),
+        "strengths": [str(x).strip() for x in (payload.get("strengths") or []) if str(x).strip()],
+        "areas_to_strengthen": [
+            str(x).strip() for x in (payload.get("areas_to_strengthen") or []) if str(x).strip()
+        ],
+        "technique_observations": [
+            str(x).strip() for x in (payload.get("technique_observations") or []) if str(x).strip()
+        ],
+        "next_focus": [str(x).strip() for x in (payload.get("next_focus") or []) if str(x).strip()],
+        "encouraging_note": str(payload.get("encouraging_note") or "").strip(),
+    }
+
+
+def _fallback_progress_evaluation(target: str, context: dict) -> dict:
+    target_label = _technique_label(target)
+
+    if target == "overall":
+        overall = context.get("overall") or {}
+        techniques = context.get("techniques") or []
+
+        total_sessions_last_7 = int(overall.get("total_sessions_last_7") or 0)
+        total_points_last_7 = int(overall.get("total_points_last_7") or 0)
+        active_days = int(overall.get("total_days_active_in_last_7") or 0)
+
+        strong_techniques = [
+            t["technique_label"]
+            for t in techniques
+            if float(t.get("first_try_accuracy") or 0) >= 0.6
+        ][:2]
+
+        supported_techniques = [
+            t["technique_label"]
+            for t in techniques
+            if float(t.get("cue_usage_rate") or 0) > 0.2 or int(t.get("correct_after_cue") or 0) > 0
+        ][:2]
+
+        harder_items = [x.get("item_label") for x in (overall.get("hardest_items") or []) if x.get("item_label")][:2]
+
+        summary = (
+            f"Recent practice shows {active_days} active day(s) in the last week, "
+            f"with {total_sessions_last_7} session(s) and {total_points_last_7} point(s). "
+            f"Overall progress appears to be building through repeated practice, even if performance varies across exercises."
+        )
+
+        strengths = [
+            "Regular practice is helping build consistency over time.",
+            "Recent sessions are giving useful information about which skills are improving.",
+        ]
+        if strong_techniques:
+            strengths.append(f"Stronger recent performance is showing in {', '.join(strong_techniques)}.")
+
+        areas = [
+            "Some exercises may still need a little more repetition for more consistent first responses.",
+            "A few items are being retried more often, which suggests useful areas to strengthen next.",
+        ]
+        if supported_techniques:
+            areas.append(f"Some tasks benefited from support in {', '.join(supported_techniques)}.")
+
+        observations = [
+            "Recovery can vary from day to day, so steady practice matters more than a single difficult session.",
+            "The current pattern suggests a mix of growing independence in some tasks and ongoing support needs in others.",
+        ]
+        if harder_items:
+            observations.append(f"Items such as {', '.join(harder_items)} may be good candidates for extra review.")
+
+        next_focus = [
+            "Keep sessions short and regular to support steady carryover.",
+            "Revisit harder items with supportive cues first, then reduce support when ready.",
+            "Aim for clear, calm responses rather than rushing.",
+        ]
+
+        encouraging_note = (
+            "Progress in speech recovery is rarely perfectly linear. "
+            "Steady effort, even on harder days, still supports improvement."
+        )
+
+        return {
+            "target": target,
+            "target_label": target_label,
+            "summary": summary,
+            "strengths": strengths[:4],
+            "areas_to_strengthen": areas[:4],
+            "technique_observations": observations[:4],
+            "next_focus": next_focus[:4],
+            "encouraging_note": encouraging_note,
+        }
+
+    technique = context.get("technique") or {}
+    first_try_accuracy = float(technique.get("first_try_accuracy") or 0)
+    avg_attempts = float(technique.get("avg_attempts_per_item") or 0)
+    cue_usage_rate = float(technique.get("cue_usage_rate") or 0)
+    total_items = int(technique.get("total_items") or 0)
+    sessions_played = int(technique.get("sessions_played") or 0)
+
+    hardest_items = [x.get("item_label") for x in (technique.get("hardest_items") or []) if x.get("item_label")][:2]
+    most_retried = [x.get("item_label") for x in (technique.get("most_retried_items") or []) if x.get("item_label")][:2]
+    cue_items = [x.get("item_label") for x in (technique.get("most_cue_dependent_items") or []) if x.get("item_label")][:2]
+    weak_sentences = [x.get("item_label") for x in (technique.get("weakest_sentence_items") or []) if x.get("item_label")][:2]
+
+    summary_parts = [
+        f"{target_label} has {sessions_played} session(s) recorded and {total_items} item(s) practised so far."
+    ]
+
+    if first_try_accuracy >= 0.65:
+        summary_parts.append("There are signs of growing independence in first responses.")
+    elif first_try_accuracy >= 0.35:
+        summary_parts.append("There are some encouraging signs of progress, with accuracy building gradually.")
+    else:
+        summary_parts.append("This area may still benefit from steady supported practice as confidence builds.")
+
+    if avg_attempts > 0:
+        summary_parts.append(f"Responses are taking about {avg_attempts:.1f} attempt(s) per item on average.")
+
+    summary = " ".join(summary_parts)
+
+    strengths = [
+        "Practice in this exercise is building a clearer picture of current strengths and support needs.",
+        "Repeated work in the same skill area can help improve familiarity and confidence.",
+    ]
+
+    areas = [
+        "This exercise may need a little more practice for more consistent first responses.",
+        "Slowing down and focusing on one response at a time may help accuracy.",
+    ]
+
+    observations = []
+
+    if cue_usage_rate > 0.2:
+        observations.append("This exercise appears to benefit from support, which can be a helpful step toward more independent retrieval.")
+
+    if hardest_items:
+        observations.append(f"Some items that may need more practice include {', '.join(hardest_items)}.")
+
+    if most_retried:
+        observations.append(f"Items such as {', '.join(most_retried)} are taking more repeated attempts.")
+
+    if weak_sentences:
+        observations.append(f"Some sentence targets, such as {', '.join(weak_sentences)}, may benefit from extra repetition.")
+
+    if cue_items:
+        observations.append(f"Support was especially helpful on items like {', '.join(cue_items)}.")
+
+    if not observations:
+        observations.append("The pattern suggests continued benefit from steady, focused repetition in this exercise.")
+
+    next_focus = [
+        "Keep practising this technique in short, manageable sessions.",
+        "Revisit harder items regularly while keeping the pace calm and supported.",
+        "Aim for clear retrieval first, then build speed gradually.",
+    ]
+
+    encouraging_note = (
+        "Recovery pace can vary, and needing support is still part of meaningful progress. "
+        "Consistent practice in this area can continue to strengthen confidence over time."
+    )
+
+    return {
+        "target": target,
+        "target_label": target_label,
+        "summary": summary,
+        "strengths": strengths[:4],
+        "areas_to_strengthen": areas[:4],
+        "technique_observations": observations[:4],
+        "next_focus": next_focus[:4],
+        "encouraging_note": encouraging_note,
+    }
+
+
+def _generate_progress_evaluation(target: str, summary: dict, profile: dict | None = None) -> dict:
+    if target != "overall":
+        _validate_technique_id(target)
+
+    context = _build_progress_eval_context(target=target, summary=summary, profile=profile)
+    provider = os.getenv("PROGRESS_EVAL_PROVIDER", "local").strip().lower()
+    if provider not in {"local", "openai"}:
+        provider = "local"
+
+    payload = None
+
+    try:
+        if provider == "local":
+            payload = _generate_progress_eval_with_local_llm(context)
+        else:
+            payload = _generate_progress_eval_with_openai(context)
+    except Exception:
+        if provider == "local" and os.getenv("OPENAI_API_KEY"):
+            try:
+                payload = _generate_progress_eval_with_openai(context)
+            except Exception:
+                payload = None
+
+    if payload:
+        normalised = _normalise_progress_eval_payload(target, payload)
+        if normalised["summary"]:
+            return normalised
+
+    return _fallback_progress_evaluation(target, context)
 
 
 # =========================================================
@@ -1944,6 +2714,33 @@ async def get_progress_summary(clerk_user_id: str = Depends(require_clerk_user_i
     }
 
 
+@app.post("/api/progress/ai-evaluation", response_model=ProgressAiEvaluationResponse)
+async def get_progress_ai_evaluation(
+    payload: ProgressAiEvaluationRequest,
+    clerk_user_id: str = Depends(require_clerk_user_id),
+):
+    await get_or_create_user(clerk_user_id)
+
+    target = (payload.target or "overall").strip()
+    if target != "overall":
+        _validate_technique_id(target)
+
+    try:
+        evaluation = _generate_progress_evaluation(
+            target=target,
+            summary=payload.summary or {},
+            profile=payload.profile or {},
+        )
+        return ProgressAiEvaluationResponse(**evaluation)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate progress evaluation: {str(error)}",
+        )
+
+
 @app.get("/api/technique/{technique_id}")
 async def get_technique_stats(
     technique_id: str,
@@ -2019,7 +2816,7 @@ async def get_technique_stats(
 
 
 # =========================================================
-# Database registration
+# Database
 # =========================================================
 
 register_tortoise(

@@ -10,6 +10,7 @@ const TECHNIQUES = [
   { id: "naming_with_cues", label: "Naming with Cues" },
   { id: "sentence_repetition", label: "Sentence Repetition" },
   { id: "semantic_feature_analysis", label: "Semantic Feature Analysis" },
+  { id: "action_verb_naming", label: "Action Verb Naming" },
 ];
 
 const IMAGE_GENERATION_OPTIONS = [
@@ -29,6 +30,14 @@ const IMAGE_GENERATION_OPTIONS = [
     description: "Create new images on this machine when needed.",
   },
 ];
+
+function getTechniqueLabel(techniqueId) {
+  return (
+    TECHNIQUES.find((technique) => technique.id === techniqueId)?.label ||
+    techniqueId ||
+    "Pack"
+  );
+}
 
 export default function Personalisation() {
   const { getToken } = useAuth();
@@ -61,28 +70,27 @@ export default function Personalisation() {
     return form.image_generation_mode || "openai";
   }, [form.allow_generated_images, form.image_generation_mode]);
 
-  const selectedTechniqueLabel =
-    TECHNIQUES.find((t) => t.id === selectedTechnique)?.label || "Pack";
+  const selectedTechniqueLabel = getTechniqueLabel(selectedTechnique);
 
   const update = (key, value) => {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((current) => ({ ...current, [key]: value }));
   };
 
   const handleAllowGeneratedImagesChange = (checked) => {
-    setForm((f) => ({
-      ...f,
+    setForm((current) => ({
+      ...current,
       allow_generated_images: checked,
       image_generation_mode: checked
-        ? (f.image_generation_mode && f.image_generation_mode !== "none"
-            ? f.image_generation_mode
-            : "openai")
+        ? current.image_generation_mode && current.image_generation_mode !== "none"
+          ? current.image_generation_mode
+          : "openai"
         : "none",
     }));
   };
 
   const handleGenerationModeChange = (mode) => {
-    setForm((f) => ({
-      ...f,
+    setForm((current) => ({
+      ...current,
       allow_generated_images: mode !== "none",
       image_generation_mode: mode,
     }));
@@ -95,14 +103,18 @@ export default function Personalisation() {
 
     try {
       const token = await getToken();
-      if (!token) return;
+      if (!token) {
+        return;
+      }
 
       const res = await fetch(`${API_BASE}/api/personalisation`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "Failed to load personalisation");
+      if (!res.ok) {
+        throw new Error(data?.detail || "Failed to load personalisation");
+      }
 
       const backendAllowGenerated = !!data.allow_generated_images;
 
@@ -111,8 +123,8 @@ export default function Personalisation() {
         ["none", "openai", "local"].includes(data.image_generation_mode)
           ? data.image_generation_mode
           : backendAllowGenerated
-            ? "openai"
-            : "none";
+          ? "openai"
+          : "none";
 
       setForm({
         interests_text: data.interests_text ?? "",
@@ -145,7 +157,9 @@ export default function Personalisation() {
 
     try {
       const token = await getToken();
-      if (!token) return false;
+      if (!token) {
+        return false;
+      }
 
       const payload = {
         ...form,
@@ -165,7 +179,9 @@ export default function Personalisation() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "Failed to save personalisation");
+      if (!res.ok) {
+        throw new Error(data?.detail || "Failed to save personalisation");
+      }
 
       if (!silent) {
         setStatus("Preferences saved.");
@@ -188,7 +204,9 @@ export default function Personalisation() {
 
     try {
       const token = await getToken();
-      if (!token) throw new Error("You must be signed in.");
+      if (!token) {
+        throw new Error("You must be signed in.");
+      }
 
       const saved = await saveProfile({ silent: true });
       if (!saved) {
@@ -207,19 +225,20 @@ export default function Personalisation() {
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail || "Failed to generate pack");
+      if (!res.ok) {
+        throw new Error(data?.detail || "Failed to generate pack");
+      }
+
+      const items = Array.isArray(data.items) ? data.items : [];
 
       setLastPackSummary({
         technique_id: data.technique_id,
+        technique_label: getTechniqueLabel(data.technique_id),
         difficulty: data.difficulty,
-        count: Array.isArray(data.items) ? data.items.length : 0,
+        count: items.length,
         generated_at: data.generated_at,
-        generatedCount: Array.isArray(data.items)
-          ? data.items.filter((x) => x?.source === "generated").length
-          : 0,
-        catalogCount: Array.isArray(data.items)
-          ? data.items.filter((x) => x?.source === "catalog").length
-          : 0,
+        generatedCount: items.filter((item) => item?.source === "generated").length,
+        catalogCount: items.filter((item) => item?.source === "catalog").length,
       });
 
       setStatus("Pack ready.");
@@ -257,8 +276,8 @@ export default function Personalisation() {
     effectiveImageGenerationMode === "local"
       ? "Local image generation selected."
       : effectiveImageGenerationMode === "openai"
-        ? "Online image generation selected."
-        : "Only curated library images will be used.";
+      ? "Online image generation selected."
+      : "Only curated library images will be used.";
 
   return (
     <div className="basic-speech-content">
@@ -277,7 +296,8 @@ export default function Personalisation() {
         >
           <h2 style={{ marginBottom: 6 }}>Make it yours</h2>
           <p style={{ opacity: 0.85, marginTop: 0 }}>
-            Tell ReLingo what your daily life looks like, and it will generate practice content that matches your interests.
+            Tell ReLingo what your daily life looks like, and it will generate
+            practice content that matches your interests.
           </p>
 
           {error && (
@@ -308,7 +328,8 @@ export default function Personalisation() {
               <div style={{ marginTop: 16 }}>
                 <label style={{ fontWeight: 700 }}>Your interests / routine</label>
                 <p style={{ marginTop: 4, opacity: 0.8 }}>
-                  Example: gym, football, university, coding, barbering, cooking, family, travel.
+                  Example: gym, football, university, coding, barbering, cooking,
+                  family, travel.
                 </p>
                 <textarea
                   value={form.interests_text}
@@ -361,9 +382,9 @@ export default function Personalisation() {
                     color: "inherit",
                   }}
                 >
-                  {TECHNIQUES.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.label}
+                  {TECHNIQUES.map((technique) => (
+                    <option key={technique.id} value={technique.id}>
+                      {technique.label}
                     </option>
                   ))}
                 </select>
@@ -403,7 +424,9 @@ export default function Personalisation() {
                     <label style={{ fontWeight: 700 }}>Sentence length</label>
                     <select
                       value={form.sentence_length}
-                      onChange={(e) => update("sentence_length", Number(e.target.value))}
+                      onChange={(e) =>
+                        update("sentence_length", Number(e.target.value))
+                      }
                       style={{
                         width: "100%",
                         marginTop: 6,
@@ -435,7 +458,13 @@ export default function Personalisation() {
                     />
                     <div style={{ minWidth: 0, textAlign: "left" }}>
                       <div style={{ fontWeight: 700 }}>Enable cues</div>
-                      <div style={{ opacity: 0.8, marginTop: 4, lineHeight: 1.5 }}>
+                      <div
+                        style={{
+                          opacity: 0.8,
+                          marginTop: 4,
+                          lineHeight: 1.5,
+                        }}
+                      >
                         {isCueTechnique
                           ? "Allow ReLingo to build exercises that use semantic and phonemic cueing."
                           : "Show a hint after an incorrect attempt."}
@@ -445,26 +474,47 @@ export default function Personalisation() {
                 </div>
 
                 <div style={settingCardStyle}>
-                  <label htmlFor="allow-generated-images" style={settingLabelStyle}>
+                  <label
+                    htmlFor="allow-generated-images"
+                    style={settingLabelStyle}
+                  >
                     <input
                       id="allow-generated-images"
                       type="checkbox"
                       checked={form.allow_generated_images}
-                      onChange={(e) => handleAllowGeneratedImagesChange(e.target.checked)}
+                      onChange={(e) =>
+                        handleAllowGeneratedImagesChange(e.target.checked)
+                      }
                       disabled={saving || generating}
                       style={checkboxStyle}
                     />
                     <div style={{ minWidth: 0, textAlign: "left" }}>
-                      <div style={{ fontWeight: 700 }}>Allow generated images</div>
-                      <div style={{ opacity: 0.8, marginTop: 4, lineHeight: 1.5 }}>
-                        If ReLingo cannot find an accurate image in the therapy library, it may create a new one for your personalised exercise.
+                      <div style={{ fontWeight: 700 }}>
+                        Allow generated images
+                      </div>
+                      <div
+                        style={{
+                          opacity: 0.8,
+                          marginTop: 4,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        If ReLingo cannot find an accurate image in the therapy
+                        library, it may create a new one for your personalised
+                        exercise.
                       </div>
                     </div>
                   </label>
                 </div>
 
                 <div style={settingCardStyle}>
-                  <div style={{ fontWeight: 700, textAlign: "left", marginBottom: 10 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      textAlign: "left",
+                      marginBottom: 10,
+                    }}
+                  >
                     Image generation method
                   </div>
 
@@ -480,7 +530,8 @@ export default function Personalisation() {
                             display: "flex",
                             alignItems: "flex-start",
                             gap: 12,
-                            cursor: saving || generating ? "not-allowed" : "pointer",
+                            cursor:
+                              saving || generating ? "not-allowed" : "pointer",
                             width: "100%",
                             textAlign: "left",
                             padding: 10,
@@ -504,7 +555,13 @@ export default function Personalisation() {
                           />
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontWeight: 700 }}>{option.label}</div>
-                            <div style={{ opacity: 0.78, marginTop: 4, lineHeight: 1.5 }}>
+                            <div
+                              style={{
+                                opacity: 0.78,
+                                marginTop: 4,
+                                lineHeight: 1.5,
+                              }}
+                            >
                               {option.description}
                             </div>
                           </div>
@@ -513,13 +570,27 @@ export default function Personalisation() {
                     })}
                   </div>
 
-                  <div style={{ marginTop: 10, opacity: 0.75, textAlign: "left", lineHeight: 1.5 }}>
+                  <div
+                    style={{
+                      marginTop: 10,
+                      opacity: 0.75,
+                      textAlign: "left",
+                      lineHeight: 1.5,
+                    }}
+                  >
                     {generationSummaryText}
                   </div>
                 </div>
               </div>
 
-              <div style={{ marginTop: 24, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  marginTop: 24,
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
                 <button
                   onClick={() => saveProfile()}
                   disabled={saving || generating}
@@ -546,7 +617,9 @@ export default function Personalisation() {
                   }}
                   type="button"
                 >
-                  {generating ? "Generating..." : `Generate ${selectedTechniqueLabel}`}
+                  {generating
+                    ? "Generating..."
+                    : `Generate ${selectedTechniqueLabel}`}
                 </button>
               </div>
 
@@ -560,10 +633,12 @@ export default function Personalisation() {
                     background: "rgba(0,0,0,0.12)",
                   }}
                 >
-                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Latest pack</div>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>
+                    Latest pack
+                  </div>
 
                   <div style={{ opacity: 0.95 }}>
-                    Technique: <strong>{lastPackSummary.technique_id}</strong>
+                    Technique: <strong>{lastPackSummary.technique_label}</strong>
                   </div>
                   <div style={{ opacity: 0.95, marginTop: 4 }}>
                     Difficulty: <strong>{lastPackSummary.difficulty}</strong>
@@ -575,12 +650,14 @@ export default function Personalisation() {
                   <div style={{ opacity: 0.85, marginTop: 8 }}>
                     Curated images: <strong>{lastPackSummary.catalogCount}</strong>
                     <span style={{ marginLeft: 14 }}>
-                      Generated images: <strong>{lastPackSummary.generatedCount}</strong>
+                      Generated images:{" "}
+                      <strong>{lastPackSummary.generatedCount}</strong>
                     </span>
                   </div>
 
                   <div style={{ opacity: 0.75, marginTop: 8 }}>
-                    Generation method: <strong>{effectiveImageGenerationMode}</strong>
+                    Generation method:{" "}
+                    <strong>{effectiveImageGenerationMode}</strong>
                   </div>
 
                   <div style={{ opacity: 0.7, marginTop: 8 }}>
@@ -635,7 +712,8 @@ export default function Personalisation() {
                     fontSize: 16,
                   }}
                 >
-                  Please stay on this page while ReLingo prepares your therapy content.
+                  Please stay on this page while ReLingo prepares your therapy
+                  content.
                 </div>
 
                 <div
@@ -646,8 +724,8 @@ export default function Personalisation() {
                     fontSize: 15,
                   }}
                 >
-                  ReLingo is selecting personalised exercises, checking the therapy image library,
-                  and creating new images when needed.
+                  ReLingo is selecting personalised exercises, checking the
+                  therapy image library, and creating new images when needed.
                 </div>
 
                 <div
@@ -663,8 +741,8 @@ export default function Personalisation() {
                     {effectiveImageGenerationMode === "local"
                       ? "Local image generation"
                       : effectiveImageGenerationMode === "openai"
-                        ? "Online image generation"
-                        : "Curated library only"}
+                      ? "Online image generation"
+                      : "Curated library only"}
                   </strong>
                 </div>
 

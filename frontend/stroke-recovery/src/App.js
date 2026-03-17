@@ -12,7 +12,7 @@ import SentenceRepetition from "./components/SentenceRepetition";
 import Personalisation from "./components/Personalisation";
 import NamingWithCues from "./components/NamingWithCues";
 import SemanticFeatureAnalysis from "./components/SemanticFeatureAnalysis";
-
+import ActionVerbNaming from "./components/ActionVerbNaming";
 
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
 
@@ -90,6 +90,7 @@ function App() {
         <Route path="/personalisation" element={<Personalisation />} />
         <Route path="/naming-with-cues" element={<NamingWithCues />} />
         <Route path="/semantic-feature-analysis" element={<SemanticFeatureAnalysis />} />
+        <Route path="/action-verb-naming" element={<ActionVerbNaming />} />
       </Routes>
     </div>
   );

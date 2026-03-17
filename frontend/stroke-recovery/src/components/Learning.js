@@ -7,6 +7,7 @@ import BasicSpeech from "./BasicSpeech";
 import NamingWithCues from "./NamingWithCues";
 import SemanticFeatureAnalysis from "./SemanticFeatureAnalysis";
 import SentenceRepetition from "./SentenceRepetition";
+import ActionVerbNaming from "./ActionVerbNaming";
 
 function Learning() {
   const navigate = useNavigate();
@@ -59,6 +60,17 @@ function Learning() {
             Start
           </button>
         </div>
+
+        <div className="learning-card">
+          <h2>Action Verb Naming</h2>
+          <p>Name the action happening in the picture</p>
+          <button
+            className="learning-button"
+            onClick={() => navigate("/action-verb-naming")}
+          >
+            Start
+          </button>
+        </div>
       </div>
 
       <Routes>
@@ -66,6 +78,7 @@ function Learning() {
         <Route path="/sentence-repetition" element={<SentenceRepetition />} />
         <Route path="/naming-with-cues" element={<NamingWithCues />} />
         <Route path="/semantic-feature-analysis" element={<SemanticFeatureAnalysis />} />
+        <Route path="/action-verb-naming" element={<ActionVerbNaming />} />
       </Routes>
     </div>
   );
