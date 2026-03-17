@@ -4,6 +4,7 @@ import "../App.css";
 import "./BasicSpeech.css";
 
 import { useAuth } from "@clerk/clerk-react";
+import { useLocation } from "react-router-dom";
 import sentenceData from "../data/sentenceProduction.json";
 import {
   API_BASE,
@@ -18,6 +19,8 @@ import {
 const SESSION_SIZE = 5;
 const TECHNIQUE_ID = "sentence_repetition";
 const FALLBACK_ADVANCE_DELAY_MS = 1600;
+const PERSONALISED_MODE = "personalised";
+const CURATED_MODE = "curated";
 
 const DEFAULT_FUNCTION_WORDS = new Set([
   "a", "an", "the",
@@ -36,6 +39,10 @@ const DEFAULT_FUNCTION_WORDS = new Set([
 
 function isCorrect(scoreLevel) {
   return Number(scoreLevel) >= 2;
+}
+
+function normaliseContentMode(rawMode) {
+  return rawMode === CURATED_MODE ? CURATED_MODE : PERSONALISED_MODE;
 }
 
 function normaliseSentenceText(text) {
@@ -70,15 +77,11 @@ function normaliseSentenceItem(it) {
     image,
     required_content:
       Array.isArray(it?.required_content) && it.required_content.length > 0
-        ? it.required_content
-            .map((x) => String(x || "").trim())
-            .filter(Boolean)
+        ? it.required_content.map((x) => String(x || "").trim()).filter(Boolean)
         : derivedTargets.required_content,
     required_function:
       Array.isArray(it?.required_function) && it.required_function.length > 0
-        ? it.required_function
-            .map((x) => String(x || "").trim())
-            .filter(Boolean)
+        ? it.required_function.map((x) => String(x || "").trim()).filter(Boolean)
         : derivedTargets.required_function,
   };
 }
@@ -89,12 +92,26 @@ function getDefaultSentenceItems() {
     : [];
 }
 
+function buildSessionItems(items) {
+  const shuffled = shuffleItems(items || []);
+  return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
+}
+
 export default function SentenceRepetition() {
   const { getToken } = useAuth();
+  const location = useLocation();
+
+  const selectedMode = useMemo(() => {
+    const stateMode = location.state?.contentMode;
+    const queryMode = new URLSearchParams(location.search).get("mode");
+    return normaliseContentMode(stateMode || queryMode);
+  }, [location.state, location.search]);
 
   const [contentSource, setContentSource] = useState("local");
-  const [baseItems, setBaseItems] = useState(getDefaultSentenceItems());
+  const [baseItems, setBaseItems] = useState([]);
+  const [sessionItems, setSessionItems] = useState([]);
   const [packError, setPackError] = useState(null);
+  const [isPackLoading, setIsPackLoading] = useState(true);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -113,8 +130,6 @@ export default function SentenceRepetition() {
   const streamRef = useRef(null);
   const advanceTimeoutRef = useRef(null);
   const currentUtteranceRef = useRef(null);
-
-  const [sessionSeed, setSessionSeed] = useState(0);
 
   const postedSessionRef = useRef(false);
   const [scorePostResult, setScorePostResult] = useState(null);
@@ -209,53 +224,7 @@ export default function SentenceRepetition() {
     });
   };
 
-  useEffect(() => {
-    const loadPack = async () => {
-      setPackError(null);
-
-      try {
-        const token = await getToken();
-        if (!token) {
-          setContentSource("local");
-          setBaseItems(getDefaultSentenceItems());
-          return;
-        }
-
-        const res = await fetch(`${API_BASE}/api/content-pack/active/${TECHNIQUE_ID}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.detail || "Failed to load content pack");
-
-        const items = Array.isArray(data?.items) ? data.items : [];
-        const cleaned = items.map(normaliseSentenceItem).filter((it) => it.sentence);
-
-        if (cleaned.length > 0) {
-          setContentSource("pack");
-          setBaseItems(cleaned);
-        } else {
-          setContentSource("local");
-          setBaseItems(getDefaultSentenceItems());
-        }
-      } catch (e) {
-        setPackError(String(e.message || e));
-        setContentSource("local");
-        setBaseItems(getDefaultSentenceItems());
-      }
-    };
-
-    loadPack();
-  }, [getToken]);
-
-  const sessionItems = useMemo(() => {
-    const shuffled = shuffleItems(baseItems || []);
-    return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
-  }, [sessionSeed, baseItems]);
-
-  const currentItem = sessionItems[currentIndex];
-
-  useEffect(() => {
+  const resetSessionState = () => {
     clearAdvanceTimeout(advanceTimeoutRef);
     stopSpeaking();
 
@@ -273,7 +242,75 @@ export default function SentenceRepetition() {
     setScorePostResult(null);
     setScorePostError(null);
     setItemResults([]);
-  }, [sessionItems]);
+  };
+
+  useEffect(() => {
+    const loadPack = async () => {
+      setIsPackLoading(true);
+      setPackError(null);
+      setContentSource("local");
+      setBaseItems([]);
+      setSessionItems([]);
+      resetSessionState();
+
+      try {
+        const token = await getToken();
+        if (!token) {
+          const fallbackItems = getDefaultSentenceItems();
+          setContentSource("local");
+          setBaseItems(fallbackItems);
+          setSessionItems(buildSessionItems(fallbackItems));
+          return;
+        }
+
+        const res = await fetch(
+          `${API_BASE}/api/content-pack/active/${TECHNIQUE_ID}?mode=${selectedMode}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.detail || "Failed to load content pack");
+        }
+
+        const resolvedMode = normaliseContentMode(
+          res.headers.get("X-ReLingo-Resolved-Mode")
+        );
+
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const cleaned = items
+          .map(normaliseSentenceItem)
+          .filter((it) => it.sentence);
+
+        if (cleaned.length > 0) {
+          setContentSource(
+            resolvedMode === CURATED_MODE ? "curated" : "personalised"
+          );
+          setBaseItems(cleaned);
+          setSessionItems(buildSessionItems(cleaned));
+        } else {
+          const fallbackItems = getDefaultSentenceItems();
+          setContentSource("local");
+          setBaseItems(fallbackItems);
+          setSessionItems(buildSessionItems(fallbackItems));
+        }
+      } catch (e) {
+        const fallbackItems = getDefaultSentenceItems();
+        setPackError(String(e.message || e));
+        setContentSource("local");
+        setBaseItems(fallbackItems);
+        setSessionItems(buildSessionItems(fallbackItems));
+      } finally {
+        setIsPackLoading(false);
+      }
+    };
+
+    loadPack();
+  }, [getToken, selectedMode]);
+
+  const currentItem = !isPackLoading ? sessionItems[currentIndex] : null;
 
   const resetForNextItem = (nextIndex) => {
     clearAdvanceTimeout(advanceTimeoutRef);
@@ -356,7 +393,9 @@ export default function SentenceRepetition() {
 
       const speechText =
         shownPercent != null
-          ? `Correct sentence. You earned ${pts} point${pts === 1 ? "" : "s"}. Accuracy ${shownPercent} percent.`
+          ? `Correct sentence. You earned ${pts} point${
+              pts === 1 ? "" : "s"
+            }. Accuracy ${shownPercent} percent.`
           : `Correct sentence. You earned ${pts} point${pts === 1 ? "" : "s"}.`;
 
       setFeedback(feedbackText);
@@ -401,7 +440,7 @@ export default function SentenceRepetition() {
   };
 
   const startRecording = async () => {
-    if (isProcessing || completed || lockedUntilNext) return;
+    if (isPackLoading || isProcessing || completed || lockedUntilNext) return;
 
     try {
       stopSpeaking();
@@ -455,12 +494,14 @@ export default function SentenceRepetition() {
     const derivedTargets = deriveSentenceTargets(currentItem.sentence);
 
     const reqContent =
-      Array.isArray(currentItem.required_content) && currentItem.required_content.length > 0
+      Array.isArray(currentItem.required_content) &&
+      currentItem.required_content.length > 0
         ? currentItem.required_content
         : derivedTargets.required_content;
 
     const reqFunction =
-      Array.isArray(currentItem.required_function) && currentItem.required_function.length > 0
+      Array.isArray(currentItem.required_function) &&
+      currentItem.required_function.length > 0
         ? currentItem.required_function
         : derivedTargets.required_function;
 
@@ -523,12 +564,25 @@ export default function SentenceRepetition() {
     }
   }, [completed, sessionPoints, sessionItems.length, itemResults, getToken]);
 
-  const recordDisabled = completed || isProcessing || lockedUntilNext;
-  const progressDisplay = buildProgressDisplay(
-    currentIndex,
-    completed,
-    sessionItems.length
-  );
+  const resetSession = () => {
+    resetSessionState();
+    setSessionItems(buildSessionItems(baseItems));
+  };
+
+  const recordDisabled =
+    isPackLoading || completed || isProcessing || lockedUntilNext;
+
+  const progressDisplay = isPackLoading
+    ? 0
+    : buildProgressDisplay(currentIndex, completed, sessionItems.length);
+
+  const sourceLabel = isPackLoading
+    ? "Loading..."
+    : contentSource === "curated"
+    ? "Curated Library"
+    : contentSource === "personalised"
+    ? "Personalised Pack"
+    : "Default";
 
   return (
     <div className="basic-speech-content">
@@ -547,14 +601,14 @@ export default function SentenceRepetition() {
             <strong>Session points:</strong> {sessionPoints}
           </span>
 
-          {!completed && (
+          {!completed && !isPackLoading && (
             <span style={{ marginLeft: 12 }}>
               <strong>Attempt:</strong> {attemptNum}/3
             </span>
           )}
 
           <span style={{ marginLeft: 12, opacity: 0.85 }}>
-            <strong>Source:</strong> {contentSource === "pack" ? "Personalised" : "Default"}
+            <strong>Source:</strong> {sourceLabel}
           </span>
 
           <button
@@ -564,7 +618,9 @@ export default function SentenceRepetition() {
               padding: "6px 12px",
               borderRadius: "20px",
               border: "1px solid rgba(255,255,255,0.2)",
-              background: isMuted ? "rgba(255, 80, 80, 0.15)" : "rgba(80, 200, 120, 0.15)",
+              background: isMuted
+                ? "rgba(255, 80, 80, 0.15)"
+                : "rgba(80, 200, 120, 0.15)",
               color: "inherit",
               fontWeight: 500,
               cursor: "pointer",
@@ -578,32 +634,45 @@ export default function SentenceRepetition() {
 
         {packError && (
           <div style={{ marginTop: 10, opacity: 0.8 }}>
-            Personalised pack unavailable → using default set.
+            {selectedMode === CURATED_MODE
+              ? "Curated pack unavailable → using default set."
+              : "Personalised pack unavailable → using default set."}
           </div>
         )}
 
         <div className="practice-cards">
           <div className="practice-card">
-            {!completed ? (
-              currentItem && (
-                <div className="image-container">
-                  <img
-                    src={resolveImagePath(currentItem.image)}
-                    alt="Sentence prompt"
-                    className="practice-image"
-                  />
+            {isPackLoading && (
+              <div style={{ padding: "2rem 1rem", textAlign: "center" }}>
+                <h3 style={{ marginBottom: "1rem" }}>Loading session...</h3>
+                <p style={{ opacity: 0.8 }}>
+                  Preparing{" "}
+                  {selectedMode === CURATED_MODE
+                    ? "curated"
+                    : "personalised"}{" "}
+                  content.
+                </p>
+              </div>
+            )}
 
-                  <div style={{ marginTop: 14, textAlign: "center" }}>
-                    <h3 style={{ marginBottom: 8 }}>Say:</h3>
-                    <p style={{ fontSize: 22, fontWeight: 700 }}>
-                      {currentItem.sentence}
-                    </p>
-                  </div>
+            {!isPackLoading && !completed && currentItem && (
+              <div className="image-container">
+                <img
+                  src={resolveImagePath(currentItem.image)}
+                  alt="Sentence prompt"
+                  className="practice-image"
+                />
+
+                <div style={{ marginTop: 14, textAlign: "center" }}>
+                  <h3 style={{ marginBottom: 8 }}>Say:</h3>
+                  <p style={{ fontSize: 22, fontWeight: 700 }}>
+                    {currentItem.sentence}
+                  </p>
                 </div>
-              )
-            ) : null}
+              </div>
+            )}
 
-            {!completed && (
+            {!isPackLoading && !completed && (
               <div className="recording-section">
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
@@ -619,14 +688,14 @@ export default function SentenceRepetition() {
               </div>
             )}
 
-            {!completed && audioResult && (
+            {!isPackLoading && !completed && audioResult && (
               <div className="result-section">
                 <h4>🗣️ You said:</h4>
                 <p>{audioResult}</p>
               </div>
             )}
 
-            {!completed && feedback && (
+            {!isPackLoading && !completed && feedback && (
               <div
                 className={`feedback-message ${feedback
                   .toLowerCase()
@@ -638,7 +707,7 @@ export default function SentenceRepetition() {
               </div>
             )}
 
-            {completed && (
+            {!isPackLoading && completed && (
               <div style={{ marginTop: 14 }}>
                 <h3>Session Complete</h3>
 
@@ -646,34 +715,44 @@ export default function SentenceRepetition() {
                   Final points: <strong>{sessionPoints}</strong>
                 </p>
 
-                {scorePostResult?.analytics?.session_avg_sentence_accuracy != null && (
+                {scorePostResult?.analytics?.session_avg_sentence_accuracy !=
+                  null && (
                   <p>
                     Average sentence accuracy:{" "}
                     <strong>
-                      {Math.round(scorePostResult.analytics.session_avg_sentence_accuracy * 100)}%
+                      {Math.round(
+                        scorePostResult.analytics.session_avg_sentence_accuracy *
+                          100
+                      )}
+                      %
                     </strong>
                   </p>
                 )}
 
-                {scorePostResult?.technique?.lifetime_avg_sentence_accuracy != null && (
+                {scorePostResult?.technique?.lifetime_avg_sentence_accuracy !=
+                  null && (
                   <p>
                     Lifetime sentence accuracy:{" "}
                     <strong>
-                      {Math.round(scorePostResult.technique.lifetime_avg_sentence_accuracy * 100)}%
+                      {Math.round(
+                        scorePostResult.technique
+                          .lifetime_avg_sentence_accuracy * 100
+                      )}
+                      %
                     </strong>
                   </p>
                 )}
 
                 {scorePostError && (
-                  <p className="error-message">Score post error: {scorePostError}</p>
+                  <p className="error-message">
+                    Score post error: {scorePostError}
+                  </p>
                 )}
 
                 {scorePostResult && <p style={{ opacity: 0.9 }}>Score saved.</p>}
 
                 <div className="recording-section">
-                  <button onClick={() => setSessionSeed((s) => s + 1)}>
-                    Start New Session
-                  </button>
+                  <button onClick={resetSession}>Start New Session</button>
                 </div>
               </div>
             )}

@@ -1,6 +1,7 @@
 // frontend/src/components/SemanticFeatureAnalysis.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
+import { useLocation } from "react-router-dom";
 
 import "../App.css";
 import "./BasicSpeech.css";
@@ -16,6 +17,8 @@ import {
 
 const SESSION_SIZE = 10;
 const TECHNIQUE_ID = "semantic_feature_analysis";
+const PERSONALISED_MODE = "personalised";
+const CURATED_MODE = "curated";
 
 const DEFAULT_PROMPTS = [
   "What type of thing is it?",
@@ -25,6 +28,10 @@ const DEFAULT_PROMPTS = [
   "What is it related to?",
   "What actions are linked to it?",
 ];
+
+function normaliseContentMode(rawMode) {
+  return rawMode === CURATED_MODE ? CURATED_MODE : PERSONALISED_MODE;
+}
 
 function normaliseSfaItem(item) {
   const prompts = Array.isArray(item?.feature_prompts)
@@ -60,12 +67,18 @@ function buildResolvedSpeech({ matched, bestGuess, target, awardedPoints }) {
 
   if (matched) {
     if (guess && word) {
-      return `Good work. The AI guessed: ${guess}. The correct word is: ${word}. You earned ${awardedPoints} point${awardedPoints === 1 ? "" : "s"}.`;
+      return `Good work. The AI guessed: ${guess}. The correct word is: ${word}. You earned ${awardedPoints} point${
+        awardedPoints === 1 ? "" : "s"
+      }.`;
     }
     if (word) {
-      return `Good work. The correct word is: ${word}. You earned ${awardedPoints} point${awardedPoints === 1 ? "" : "s"}.`;
+      return `Good work. The correct word is: ${word}. You earned ${awardedPoints} point${
+        awardedPoints === 1 ? "" : "s"
+      }.`;
     }
-    return `Good work. You earned ${awardedPoints} point${awardedPoints === 1 ? "" : "s"}.`;
+    return `Good work. You earned ${awardedPoints} point${
+      awardedPoints === 1 ? "" : "s"
+    }.`;
   }
 
   if (guess && word) {
@@ -81,12 +94,26 @@ function buildResolvedSpeech({ matched, bestGuess, target, awardedPoints }) {
   return "Moving on to the next one.";
 }
 
+function buildSessionItems(items) {
+  const shuffled = shuffleItems(items || []);
+  return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
+}
+
 export default function SemanticFeatureAnalysis() {
   const { getToken } = useAuth();
+  const location = useLocation();
+
+  const selectedMode = useMemo(() => {
+    const stateMode = location.state?.contentMode;
+    const queryMode = new URLSearchParams(location.search).get("mode");
+    return normaliseContentMode(stateMode || queryMode);
+  }, [location.state, location.search]);
 
   const [contentSource, setContentSource] = useState("local");
   const [baseItems, setBaseItems] = useState([]);
+  const [sessionItems, setSessionItems] = useState([]);
   const [packError, setPackError] = useState(null);
+  const [isPackLoading, setIsPackLoading] = useState(true);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -106,9 +133,7 @@ export default function SemanticFeatureAnalysis() {
   const [scorePostResult, setScorePostResult] = useState(null);
   const [scorePostError, setScorePostError] = useState(null);
 
-  const [sessionSeed, setSessionSeed] = useState(0);
   const [itemResults, setItemResults] = useState([]);
-
   const [lastEvaluation, setLastEvaluation] = useState(null);
 
   const mediaRecorderRef = useRef(null);
@@ -201,63 +226,7 @@ export default function SemanticFeatureAnalysis() {
     });
   };
 
-  useEffect(() => {
-    const loadPack = async () => {
-      setPackError(null);
-
-      try {
-        const token = await getToken();
-
-        if (!token) {
-          setContentSource("local");
-          setBaseItems([]);
-          return;
-        }
-
-        const response = await fetch(
-          `${API_BASE}/api/content-pack/active/${TECHNIQUE_ID}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data?.detail || "Failed to load content pack");
-        }
-
-        const items = Array.isArray(data?.items) ? data.items : [];
-        const cleanedItems = items
-          .map(normaliseSfaItem)
-          .filter((item) => item.word && item.image);
-
-        if (cleanedItems.length > 0) {
-          setContentSource("pack");
-          setBaseItems(cleanedItems);
-        } else {
-          setContentSource("local");
-          setBaseItems([]);
-        }
-      } catch (err) {
-        setPackError(String(err.message || err));
-        setContentSource("local");
-        setBaseItems([]);
-      }
-    };
-
-    loadPack();
-  }, [getToken]);
-
-  const sessionItems = useMemo(() => {
-    const shuffled = shuffleItems(baseItems || []);
-    return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
-  }, [sessionSeed, baseItems]);
-
-  const currentItem = sessionItems[currentIndex];
-
-  useEffect(() => {
+  const resetSessionState = () => {
     stopSpeaking();
 
     setCurrentIndex(0);
@@ -277,7 +246,75 @@ export default function SemanticFeatureAnalysis() {
     setAttemptNum(1);
     setShowHint(false);
     setItemResults([]);
-  }, [sessionItems]);
+  };
+
+  useEffect(() => {
+    const loadPack = async () => {
+      setPackError(null);
+      setIsPackLoading(true);
+      setContentSource("local");
+      setBaseItems([]);
+      setSessionItems([]);
+      resetSessionState();
+
+      try {
+        const token = await getToken();
+
+        if (!token) {
+          setContentSource("local");
+          setBaseItems([]);
+          setSessionItems([]);
+          return;
+        }
+
+        const response = await fetch(
+          `${API_BASE}/api/content-pack/active/${TECHNIQUE_ID}?mode=${selectedMode}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.detail || "Failed to load content pack");
+        }
+
+        const resolvedMode = normaliseContentMode(
+          response.headers.get("X-ReLingo-Resolved-Mode")
+        );
+
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const cleanedItems = items
+          .map(normaliseSfaItem)
+          .filter((item) => item.word && item.image);
+
+        if (cleanedItems.length > 0) {
+          setContentSource(
+            resolvedMode === CURATED_MODE ? "curated" : "personalised"
+          );
+          setBaseItems(cleanedItems);
+          setSessionItems(buildSessionItems(cleanedItems));
+        } else {
+          setContentSource("local");
+          setBaseItems([]);
+          setSessionItems([]);
+        }
+      } catch (err) {
+        setPackError(String(err.message || err));
+        setContentSource("local");
+        setBaseItems([]);
+        setSessionItems([]);
+      } finally {
+        setIsPackLoading(false);
+      }
+    };
+
+    loadPack();
+  }, [getToken, selectedMode]);
+
+  const currentItem = !isPackLoading ? sessionItems[currentIndex] : null;
 
   const resetForNextItem = (nextIndex) => {
     stopSpeaking();
@@ -455,7 +492,7 @@ export default function SemanticFeatureAnalysis() {
   };
 
   const startRecording = async () => {
-    if (isProcessing || completed || lockedUntilNext) return;
+    if (isPackLoading || isProcessing || completed || lockedUntilNext) return;
 
     try {
       setError(null);
@@ -541,15 +578,16 @@ export default function SemanticFeatureAnalysis() {
   }, [completed, sessionPoints, sessionItems.length, itemResults, getToken]);
 
   const resetSession = () => {
-    setSessionSeed((seed) => seed + 1);
+    resetSessionState();
+    setSessionItems(buildSessionItems(baseItems));
   };
 
-  const recordDisabled = completed || isProcessing || lockedUntilNext;
-  const progressDisplay = buildProgressDisplay(
-    currentIndex,
-    completed,
-    sessionItems.length
-  );
+  const recordDisabled =
+    isPackLoading || completed || isProcessing || lockedUntilNext;
+
+  const progressDisplay = isPackLoading
+    ? 0
+    : buildProgressDisplay(currentIndex, completed, sessionItems.length);
 
   const showResultCard = !completed && lastEvaluation;
   const aiGuess = String(lastEvaluation?.best_guess || "").trim();
@@ -557,6 +595,14 @@ export default function SemanticFeatureAnalysis() {
     lastEvaluation?.revealAnswer && lastEvaluation?.target
       ? String(lastEvaluation.target).trim()
       : "";
+
+  const sourceLabel = isPackLoading
+    ? "Loading..."
+    : contentSource === "curated"
+    ? "Curated Library"
+    : contentSource === "personalised"
+    ? "Personalised Pack"
+    : "Default";
 
   return (
     <div className="basic-speech-content">
@@ -579,15 +625,14 @@ export default function SemanticFeatureAnalysis() {
             <strong>Session points:</strong> {sessionPoints}
           </span>
 
-          {!completed && (
+          {!completed && !isPackLoading && (
             <span style={{ marginLeft: 12 }}>
               <strong>Attempt:</strong> {attemptNum}/3
             </span>
           )}
 
           <span style={{ marginLeft: 12, opacity: 0.85 }}>
-            <strong>Source:</strong>{" "}
-            {contentSource === "pack" ? "Personalised" : "Default"}
+            <strong>Source:</strong> {sourceLabel}
           </span>
 
           <button
@@ -613,13 +658,26 @@ export default function SemanticFeatureAnalysis() {
 
         {packError && (
           <div style={{ marginTop: 10, opacity: 0.8 }}>
-            Personalised pack unavailable.
+            {selectedMode === CURATED_MODE
+              ? "Curated pack unavailable."
+              : "Personalised pack unavailable."}
           </div>
         )}
 
         <div className="practice-cards">
           <div className="practice-card">
-            {!completed && currentItem && (
+            {isPackLoading && (
+              <div style={{ padding: "2rem 1rem", textAlign: "center" }}>
+                <h3 style={{ marginBottom: "1rem" }}>Loading session...</h3>
+                <p style={{ opacity: 0.8 }}>
+                  Preparing{" "}
+                  {selectedMode === CURATED_MODE ? "curated" : "personalised"}{" "}
+                  content.
+                </p>
+              </div>
+            )}
+
+            {!isPackLoading && !completed && currentItem && (
               <div className="image-container">
                 <img
                   src={resolveImagePath(currentItem.image)}
@@ -672,7 +730,7 @@ export default function SemanticFeatureAnalysis() {
               </div>
             )}
 
-            {!completed && (
+            {!isPackLoading && !completed && (
               <div className="recording-section">
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
@@ -688,7 +746,7 @@ export default function SemanticFeatureAnalysis() {
               </div>
             )}
 
-            {!completed && audioResult && (
+            {!isPackLoading && !completed && audioResult && (
               <div
                 className="result-section"
                 style={{
@@ -776,7 +834,7 @@ export default function SemanticFeatureAnalysis() {
               </div>
             )}
 
-            {!completed && feedback && (
+            {!isPackLoading && !completed && feedback && (
               <div
                 className={`feedback-message ${feedback
                   .toLowerCase()
@@ -797,7 +855,7 @@ export default function SemanticFeatureAnalysis() {
 
             {error && <div className="error-message">{error}</div>}
 
-            {completed && (
+            {!isPackLoading && completed && (
               <div style={{ marginTop: 14 }}>
                 <h3>Session Complete</h3>
                 <p>

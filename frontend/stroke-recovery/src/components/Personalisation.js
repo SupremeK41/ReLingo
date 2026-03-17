@@ -39,6 +39,15 @@ function getTechniqueLabel(techniqueId) {
   );
 }
 
+function isTechniqueLikelyToGenerateImages(techniqueId) {
+  return (
+    techniqueId === "image_naming" ||
+    techniqueId === "semantic_feature_analysis" ||
+    techniqueId === "action_verb_naming" ||
+    techniqueId === "sentence_repetition"
+  );
+}
+
 export default function Personalisation() {
   const { getToken } = useAuth();
 
@@ -64,6 +73,8 @@ export default function Personalisation() {
 
   const isSentenceTechnique = selectedTechnique === "sentence_repetition";
   const isCueTechnique = selectedTechnique === "naming_with_cues";
+  const selectedTechniqueCanGenerateImages =
+    isTechniqueLikelyToGenerateImages(selectedTechnique);
 
   const effectiveImageGenerationMode = useMemo(() => {
     if (!form.allow_generated_images) return "none";
@@ -81,7 +92,8 @@ export default function Personalisation() {
       ...current,
       allow_generated_images: checked,
       image_generation_mode: checked
-        ? current.image_generation_mode && current.image_generation_mode !== "none"
+        ? current.image_generation_mode &&
+          current.image_generation_mode !== "none"
           ? current.image_generation_mode
           : "openai"
         : "none",
@@ -183,6 +195,31 @@ export default function Personalisation() {
         throw new Error(data?.detail || "Failed to save personalisation");
       }
 
+      const backendAllowGenerated = !!data.allow_generated_images;
+      const backendMode =
+        typeof data.image_generation_mode === "string" &&
+        ["none", "openai", "local"].includes(data.image_generation_mode)
+          ? data.image_generation_mode
+          : backendAllowGenerated
+          ? "openai"
+          : "none";
+
+      setForm((current) => ({
+        ...current,
+        interests_text: data.interests_text ?? current.interests_text,
+        avoid_topics_text: data.avoid_topics_text ?? "",
+        difficulty: Number(data.difficulty ?? current.difficulty ?? 1),
+        sentence_length: Number(
+          data.sentence_length ?? current.sentence_length ?? 1
+        ),
+        cue_enabled:
+          typeof data.cue_enabled === "boolean"
+            ? data.cue_enabled
+            : current.cue_enabled,
+        allow_generated_images: backendAllowGenerated,
+        image_generation_mode: backendMode,
+      }));
+
       if (!silent) {
         setStatus("Preferences saved.");
       }
@@ -237,7 +274,8 @@ export default function Personalisation() {
         difficulty: data.difficulty,
         count: items.length,
         generated_at: data.generated_at,
-        generatedCount: items.filter((item) => item?.source === "generated").length,
+        generatedCount: items.filter((item) => item?.source === "generated")
+          .length,
         catalogCount: items.filter((item) => item?.source === "catalog").length,
       });
 
@@ -272,12 +310,17 @@ export default function Personalisation() {
     height: 18,
   };
 
-  const generationSummaryText =
-    effectiveImageGenerationMode === "local"
-      ? "Local image generation selected."
-      : effectiveImageGenerationMode === "openai"
-      ? "Online image generation selected."
-      : "Only curated library images will be used.";
+  const generationSummaryText = !selectedTechniqueCanGenerateImages
+    ? "This exercise mainly uses the curated therapy image library."
+    : effectiveImageGenerationMode === "local"
+    ? "Local image generation selected."
+    : effectiveImageGenerationMode === "openai"
+    ? "Online image generation selected."
+    : "Only curated library images will be used.";
+
+  const generationHelpText = isCueTechnique
+    ? "Naming with Cues mainly uses the curated cue image library. Generated images are usually not needed here."
+    : "If ReLingo cannot find an accurate image in the therapy library, it may create a new one for your personalised exercise.";
 
   return (
     <div className="basic-speech-content">
@@ -473,10 +516,21 @@ export default function Personalisation() {
                   </label>
                 </div>
 
-                <div style={settingCardStyle}>
+                <div
+                  style={{
+                    ...settingCardStyle,
+                    opacity: selectedTechniqueCanGenerateImages ? 1 : 0.75,
+                  }}
+                >
                   <label
                     htmlFor="allow-generated-images"
-                    style={settingLabelStyle}
+                    style={{
+                      ...settingLabelStyle,
+                      cursor:
+                        saving || generating || !selectedTechniqueCanGenerateImages
+                          ? "not-allowed"
+                          : "pointer",
+                    }}
                   >
                     <input
                       id="allow-generated-images"
@@ -485,7 +539,9 @@ export default function Personalisation() {
                       onChange={(e) =>
                         handleAllowGeneratedImagesChange(e.target.checked)
                       }
-                      disabled={saving || generating}
+                      disabled={
+                        saving || generating || !selectedTechniqueCanGenerateImages
+                      }
                       style={checkboxStyle}
                     />
                     <div style={{ minWidth: 0, textAlign: "left" }}>
@@ -499,15 +555,18 @@ export default function Personalisation() {
                           lineHeight: 1.5,
                         }}
                       >
-                        If ReLingo cannot find an accurate image in the therapy
-                        library, it may create a new one for your personalised
-                        exercise.
+                        {generationHelpText}
                       </div>
                     </div>
                   </label>
                 </div>
 
-                <div style={settingCardStyle}>
+                <div
+                  style={{
+                    ...settingCardStyle,
+                    opacity: selectedTechniqueCanGenerateImages ? 1 : 0.75,
+                  }}
+                >
                   <div
                     style={{
                       fontWeight: 700,
@@ -521,6 +580,8 @@ export default function Personalisation() {
                   <div style={{ display: "grid", gap: 10 }}>
                     {IMAGE_GENERATION_OPTIONS.map((option) => {
                       const checked = effectiveImageGenerationMode === option.id;
+                      const disabled =
+                        saving || generating || !selectedTechniqueCanGenerateImages;
 
                       return (
                         <label
@@ -530,8 +591,7 @@ export default function Personalisation() {
                             display: "flex",
                             alignItems: "flex-start",
                             gap: 12,
-                            cursor:
-                              saving || generating ? "not-allowed" : "pointer",
+                            cursor: disabled ? "not-allowed" : "pointer",
                             width: "100%",
                             textAlign: "left",
                             padding: 10,
@@ -550,7 +610,7 @@ export default function Personalisation() {
                             name="image_generation_mode"
                             checked={checked}
                             onChange={() => handleGenerationModeChange(option.id)}
-                            disabled={saving || generating}
+                            disabled={disabled}
                             style={{ marginTop: 4 }}
                           />
                           <div style={{ minWidth: 0 }}>

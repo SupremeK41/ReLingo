@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 
 import whisper
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from metaphone import doublemetaphone
 from openai import OpenAI
@@ -26,7 +26,7 @@ from models import (
     UserProfile,
     UserTechniqueStats,
 )
-from personalisation import build_content_pack
+from personalisation import build_content_pack, build_curated_pack
 from schemas import ContentPackOut, UserOut, UserProfileIn, UserProfileOut
 
 
@@ -72,6 +72,13 @@ SUPPORTED_TECHNIQUE_IDS = {
     "sentence_repetition",
     "semantic_feature_analysis",
     "action_verb_naming",
+}
+
+CONTENT_MODE_PERSONALISED = "personalised"
+CONTENT_MODE_CURATED = "curated"
+SUPPORTED_CONTENT_MODES = {
+    CONTENT_MODE_PERSONALISED,
+    CONTENT_MODE_CURATED,
 }
 
 DEFAULT_FUNCTION_WORDS = {
@@ -623,13 +630,13 @@ def build_target_pool(
     return _dedupe_preserve_order(expanded)
 
 
-def best_match_against_target_pool(
+def closest_match_against_target_pool(
     transcript_norm: str,
     target_pool: list[str],
     rel_cutoff: float = REL_CUTOFF_DEFAULT,
-) -> tuple[bool | None, str | None, int | None, float | None, bool | None]:
+) -> tuple[str | None, int | None, float | None, bool | None, bool]:
     if not transcript_norm or not target_pool:
-        return None, None, None, None, None
+        return None, None, None, None, False
 
     best_target = None
     best_match = None
@@ -640,20 +647,40 @@ def best_match_against_target_pool(
 
         for candidate in candidates:
             matched, dist, rel, phon = is_match_phonetic(candidate, target)
-            score_tuple = (0 if (matched or rel <= rel_cutoff) else 1, rel, dist)
+            close_enough = bool(matched or rel <= rel_cutoff)
+            score_tuple = (0 if close_enough else 1, rel, dist)
 
             if best_tuple is None or score_tuple < best_tuple:
                 best_tuple = score_tuple
                 best_target = target
-                best_match = (matched, dist, rel, phon)
+                best_match = (dist, rel, phon, close_enough)
 
     if best_match is None:
+        return None, None, None, None, False
+
+    dist, rel, phon, close_enough = best_match
+    return best_target, dist, rel, bool(phon), bool(close_enough)
+
+
+def best_match_against_target_pool(
+    transcript_norm: str,
+    target_pool: list[str],
+    rel_cutoff: float = REL_CUTOFF_DEFAULT,
+) -> tuple[bool | None, str | None, int | None, float | None, bool | None]:
+    if not transcript_norm or not target_pool:
         return None, None, None, None, None
 
-    raw_matched, dist, rel, phon = best_match
-    final_matched = bool(raw_matched or rel <= rel_cutoff)
+    best_target, dist, rel, phon, close_enough = closest_match_against_target_pool(
+        transcript_norm,
+        target_pool,
+        rel_cutoff=rel_cutoff,
+    )
 
-    return final_matched, best_target, dist, rel, bool(phon)
+    if best_target is None:
+        return None, None, None, None, None
+
+    matched_target = best_target if close_enough else None
+    return bool(close_enough), matched_target, dist, rel, phon
 
 
 # =========================================================
@@ -796,38 +823,6 @@ def _sentence_empty_eval(
 
 # =========================================================
 # Difficulty adaptation helpers
-# Explicit difficulty meanings:
-#
-# Image Naming:
-# - 1: very common, concrete, visually obvious nouns
-# - 2: everyday nouns with a bit more lexical load / specificity
-# - 3: longer, lower-frequency, more specific concrete nouns
-#
-# Naming with Cues:
-# - target difficulty follows image naming
-# - cue support remains helpful, but harder levels can be a bit less direct
-#
-# Action Verb Naming:
-# - 1: very common, visually obvious actions
-# - 2: everyday actions with a bit more specificity
-# - 3: less frequent / more specific actions or slightly heavier verb forms
-#
-# Semantic Feature Analysis:
-# - 1: highly familiar, easy-to-describe concrete concepts
-# - 2: still everyday, but a little more specific
-# - 3: more specific concepts with slightly richer semantic demand
-#
-# Sentence Repetition:
-# - 1: short sentences, common words, simple syntax
-# - 2: medium length, slightly richer vocabulary
-# - 3: longer sentences, more content words, harder vocabulary / phrasing
-#
-# Adaptation rules:
-# - profile difficulty stays the main anchor
-# - adaptive offset is only -1, 0, or +1
-# - not enough data -> no change
-# - good sustained performance -> +1
-# - clear struggle -> -1
 # =========================================================
 
 def _clamp_int(value: int, min_value: int, max_value: int) -> int:
@@ -1303,6 +1298,93 @@ def _safe_int(value, default=0) -> int:
         return default
 
 
+def _normalise_content_mode(mode: str | None) -> str:
+    mode = (mode or CONTENT_MODE_PERSONALISED).strip().lower()
+    if mode not in SUPPORTED_CONTENT_MODES:
+        return CONTENT_MODE_PERSONALISED
+    return mode
+
+
+def _clamp_n_items(value: int | None, default: int = 10) -> int:
+    try:
+        value = int(value or default)
+    except Exception:
+        value = default
+    return max(1, min(25, value))
+
+
+def _profile_to_pack_settings(
+    profile: UserProfile,
+    *,
+    difficulty_override: int | None = None,
+) -> dict:
+    requested_mode = (getattr(profile, "image_generation_mode", "none") or "none").strip().lower()
+    if requested_mode not in {"none", "openai", "local"}:
+        requested_mode = "none"
+
+    allow_generated_images = bool(profile.allow_generated_images) and requested_mode != "none"
+    if not allow_generated_images:
+        requested_mode = "none"
+
+    return {
+        "interests_text": profile.interests_text or "",
+        "avoid_topics_text": profile.avoid_topics_text or "",
+        "difficulty": _clamp_int(
+            int(difficulty_override or profile.difficulty or 1),
+            DIFFICULTY_MIN,
+            DIFFICULTY_MAX,
+        ),
+        "sentence_length": _clamp_int(
+            int(profile.sentence_length or 1),
+            DIFFICULTY_MIN,
+            DIFFICULTY_MAX,
+        ),
+        "cue_enabled": bool(profile.cue_enabled),
+        "allow_generated_images": allow_generated_images,
+        "image_generation_mode": requested_mode,
+    }
+
+
+def _content_pack_out_from_dict(pack: dict, technique_id: str) -> ContentPackOut:
+    return ContentPackOut(
+        technique_id=pack.get("technique_id", technique_id),
+        difficulty=int(pack.get("difficulty", 1)),
+        generated_at=pack.get("generated_at", datetime.utcnow().isoformat() + "Z"),
+        pack_id=pack.get("pack_id", uuid.uuid4().hex),
+        items=pack.get("items", []),
+    )
+
+
+def _set_pack_mode_headers(
+    response: Response,
+    *,
+    requested_mode: str,
+    resolved_mode: str,
+) -> None:
+    response.headers["X-ReLingo-Requested-Mode"] = requested_mode
+    response.headers["X-ReLingo-Resolved-Mode"] = resolved_mode
+
+
+async def _build_curated_pack_for_user(
+    user: User,
+    technique_id: str,
+    *,
+    n_items: int = 10,
+    difficulty_override: int | None = None,
+) -> dict:
+    profile = await get_or_create_profile(user)
+    profile_dict = _profile_to_pack_settings(
+        profile,
+        difficulty_override=difficulty_override,
+    )
+
+    return await build_curated_pack(
+        profile=profile_dict,
+        technique_id=technique_id,
+        n_items=_clamp_n_items(n_items),
+    )
+
+
 def _validate_technique_id(technique_id: str) -> str:
     technique_id = (technique_id or "").strip()
     if technique_id not in SUPPORTED_TECHNIQUE_IDS:
@@ -1640,8 +1722,7 @@ async def generate_personalised_pack(
 
     technique_id = _validate_technique_id(payload.technique_id)
 
-    n_items = int(payload.n_items or 10)
-    n_items = max(1, min(25, n_items))
+    n_items = _clamp_n_items(payload.n_items)
 
     base_difficulty = _clamp_int(
         int(payload.difficulty or profile.difficulty or 1),
@@ -1656,15 +1737,10 @@ async def generate_personalised_pack(
         stats=technique_stats,
     )
 
-    profile_dict = {
-        "interests_text": profile.interests_text or "",
-        "avoid_topics_text": profile.avoid_topics_text or "",
-        "difficulty": effective_difficulty,
-        "sentence_length": _clamp_int(int(profile.sentence_length or 1), DIFFICULTY_MIN, DIFFICULTY_MAX),
-        "cue_enabled": bool(profile.cue_enabled),
-        "allow_generated_images": bool(profile.allow_generated_images),
-        "image_generation_mode": profile.image_generation_mode or "none",
-    }
+    profile_dict = _profile_to_pack_settings(
+        profile,
+        difficulty_override=effective_difficulty,
+    )
 
     print("PROFILE SETTINGS:")
     print(profile_dict)
@@ -1711,32 +1787,63 @@ async def generate_personalised_pack(
 @app.get("/api/content-pack/active/{technique_id}", response_model=ContentPackOut)
 async def get_active_pack(
     technique_id: str,
+    response: Response,
+    mode: str | None = None,
+    n_items: int | None = None,
     clerk_user_id: str = Depends(require_clerk_user_id),
 ):
     technique_id = _validate_technique_id(technique_id)
     user = await get_or_create_user(clerk_user_id)
 
+    requested_mode = _normalise_content_mode(mode)
+    resolved_mode = requested_mode
+    n_items = _clamp_n_items(n_items)
+
+    if requested_mode == CONTENT_MODE_CURATED:
+        curated_pack = await _build_curated_pack_for_user(
+            user=user,
+            technique_id=technique_id,
+            n_items=n_items,
+        )
+        _set_pack_mode_headers(
+            response,
+            requested_mode=requested_mode,
+            resolved_mode=CONTENT_MODE_CURATED,
+        )
+        return _content_pack_out_from_dict(curated_pack, technique_id)
+
     row = await UserContentPack.get_or_none(user=user, technique_id=technique_id, active=True)
     if not row or not row.pack_json:
         row = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
 
-    if not row or not row.pack_json:
+    if row and row.pack_json:
+        pack = row.pack_json
+        _set_pack_mode_headers(
+            response,
+            requested_mode=requested_mode,
+            resolved_mode=CONTENT_MODE_PERSONALISED,
+        )
         return ContentPackOut(
-            technique_id=technique_id,
-            difficulty=1,
-            generated_at=datetime.utcnow().isoformat() + "Z",
-            pack_id=uuid.uuid4().hex,
-            items=[],
+            technique_id=pack.get("technique_id", technique_id),
+            difficulty=int(pack.get("difficulty", row.difficulty or 1)),
+            generated_at=pack.get("generated_at", datetime.utcnow().isoformat() + "Z"),
+            pack_id=pack.get("pack_id", uuid.uuid4().hex),
+            items=pack.get("items", []),
         )
 
-    pack = row.pack_json
-    return ContentPackOut(
-        technique_id=pack.get("technique_id", technique_id),
-        difficulty=int(pack.get("difficulty", row.difficulty or 1)),
-        generated_at=pack.get("generated_at", datetime.utcnow().isoformat() + "Z"),
-        pack_id=pack.get("pack_id", uuid.uuid4().hex),
-        items=pack.get("items", []),
+    curated_pack = await _build_curated_pack_for_user(
+        user=user,
+        technique_id=technique_id,
+        n_items=n_items,
     )
+    resolved_mode = CONTENT_MODE_CURATED
+
+    _set_pack_mode_headers(
+        response,
+        requested_mode=requested_mode,
+        resolved_mode=resolved_mode,
+    )
+    return _content_pack_out_from_dict(curated_pack, technique_id)
 
 
 # =========================================================
@@ -1995,7 +2102,6 @@ async def update_score(
 
 # =========================================================
 # Generic speech-to-text endpoint
-# Still used by image naming and cue-based naming.
 # =========================================================
 
 @app.post("/api/speech-to-text")
@@ -2019,11 +2125,12 @@ async def speech_to_text(
                 [value.strip() for value in vocab.split(",") if value.strip()]
             )[:12]
 
+        # Keep transcript unbiased so it reflects what Whisper actually heard.
         _, text, transcript_norm, max_no_speech_prob = _transcribe_audio_file(
             temp_path,
             max_words=25,
-            vocab_list=vocab_list,
-            use_initial_prompt=bool(vocab_list and not too_short),
+            vocab_list=None,
+            use_initial_prompt=False,
         )
 
         if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
@@ -2048,28 +2155,25 @@ async def speech_to_text(
             )
 
         best_guess = None
-        best_dist = 10**9
-        best_rel = 1.0
-        best_phon = False
+        best_dist = None
+        best_rel = None
+        best_phon = None
         best_guess_matched = False
 
         if vocab_list and transcript_norm:
-            best_score_tuple = None
+            guess_target, guess_dist, guess_rel, guess_phon, guess_close = (
+                closest_match_against_target_pool(
+                    transcript_norm,
+                    vocab_list,
+                    rel_cutoff=REL_CUTOFF_DEFAULT,
+                )
+            )
 
-            for vocab_target in vocab_list:
-                vocab_candidates = build_phrase_candidates(transcript_norm, vocab_target)
-
-                for candidate in vocab_candidates:
-                    matched, dist, rel, phon = is_match_phonetic(candidate, vocab_target)
-                    score_tuple = (0 if (matched or rel <= REL_CUTOFF_DEFAULT) else 1, rel, dist)
-
-                    if best_score_tuple is None or score_tuple < best_score_tuple:
-                        best_score_tuple = score_tuple
-                        best_guess = vocab_target
-                        best_dist = dist
-                        best_rel = rel
-                        best_phon = phon
-                        best_guess_matched = matched
+            best_guess = guess_target if guess_close else None
+            best_dist = guess_dist
+            best_rel = guess_rel
+            best_phon = guess_phon
+            best_guess_matched = bool(guess_close)
 
         matched_vs_target = None
         matched_target = None
@@ -2094,17 +2198,17 @@ async def speech_to_text(
         final_matched = (
             matched_vs_target
             if matched_vs_target is not None
-            else (bool(best_guess_matched) if vocab_list and transcript_norm else None)
+            else (best_guess_matched if vocab_list and transcript_norm else None)
         )
 
         return {
             "text": text,
             "matched": final_matched,
-            "matched_target": matched_target,
+            "matched_target": matched_target if final_matched else None,
             "best_guess": best_guess,
-            "distance": dist_vs_target if dist_vs_target is not None else (best_dist if vocab_list and transcript_norm else None),
-            "rel_distance": rel_vs_target if rel_vs_target is not None else (best_rel if vocab_list and transcript_norm else None),
-            "phonetic_used": phon_vs_target if phon_vs_target is not None else (bool(best_phon) if vocab_list and transcript_norm else None),
+            "distance": dist_vs_target if dist_vs_target is not None else best_dist,
+            "rel_distance": rel_vs_target if rel_vs_target is not None else best_rel,
+            "phonetic_used": phon_vs_target if phon_vs_target is not None else best_phon,
             "target": target,
             "attempt_num": attempt_num,
             "cue_shown": bool(cue_shown) if cue_shown is not None else None,
@@ -2121,8 +2225,6 @@ async def speech_to_text(
 
 # =========================================================
 # Action verb naming eval
-# Same idea as image naming, but it accepts verb variants too.
-# Do not expose helper-prompt guesses to the frontend.
 # =========================================================
 
 @app.post("/api/action-verb-eval")
@@ -2195,7 +2297,7 @@ async def action_verb_eval(
         return {
             "text": text,
             "matched": final_matched,
-            "matched_target": matched_target,
+            "matched_target": matched_target if final_matched else None,
             "best_guess": None,
             "distance": dist,
             "rel_distance": rel,
@@ -2217,8 +2319,6 @@ async def action_verb_eval(
 
 # =========================================================
 # Semantic feature analysis eval
-# Keep transcript based on what was actually spoken.
-# Let the later semantic evaluator do the inference.
 # =========================================================
 
 @app.post("/api/sfa-eval")
@@ -2302,8 +2402,6 @@ async def sfa_eval(
 
 # =========================================================
 # Sentence repetition eval
-# Still percentage-based, but keep content-word matching
-# forgiving enough for mild aphasia / pronunciation issues.
 # =========================================================
 
 @app.post("/api/sentence-eval")

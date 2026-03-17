@@ -1,6 +1,7 @@
 // frontend/src/components/ActionVerbNaming.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
+import { useLocation } from "react-router-dom";
 
 import "../App.css";
 import "./BasicSpeech.css";
@@ -18,6 +19,12 @@ import {
 const SESSION_SIZE = 10;
 const TECHNIQUE_ID = "action_verb_naming";
 const FALLBACK_ADVANCE_DELAY_MS = 1600;
+const PERSONALISED_MODE = "personalised";
+const CURATED_MODE = "curated";
+
+function normaliseContentMode(rawMode) {
+  return rawMode === CURATED_MODE ? CURATED_MODE : PERSONALISED_MODE;
+}
 
 function getCueFromVerb(verb) {
   if (!verb) return "";
@@ -58,12 +65,26 @@ function normaliseActionVerbItem(item) {
   };
 }
 
+function buildSessionItems(items) {
+  const shuffled = shuffleItems(items || []);
+  return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
+}
+
 export default function ActionVerbNaming() {
   const { getToken } = useAuth();
+  const location = useLocation();
 
-  const [contentSource, setContentSource] = useState("pack");
+  const selectedMode = useMemo(() => {
+    const stateMode = location.state?.contentMode;
+    const queryMode = new URLSearchParams(location.search).get("mode");
+    return normaliseContentMode(stateMode || queryMode);
+  }, [location.state, location.search]);
+
+  const [contentSource, setContentSource] = useState("local");
   const [baseItems, setBaseItems] = useState([]);
+  const [sessionItems, setSessionItems] = useState([]);
   const [packError, setPackError] = useState(null);
+  const [isPackLoading, setIsPackLoading] = useState(true);
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -82,8 +103,6 @@ export default function ActionVerbNaming() {
 
   const [scorePostResult, setScorePostResult] = useState(null);
   const [scorePostError, setScorePostError] = useState(null);
-
-  const [sessionSeed, setSessionSeed] = useState(0);
   const [itemResults, setItemResults] = useState([]);
 
   const mediaRecorderRef = useRef(null);
@@ -186,64 +205,7 @@ export default function ActionVerbNaming() {
     });
   };
 
-  useEffect(() => {
-    const loadPack = async () => {
-      setPackError(null);
-
-      try {
-        const token = await getToken();
-
-        if (!token) {
-          setContentSource("pack");
-          setBaseItems([]);
-          return;
-        }
-
-        const response = await fetch(
-          `${API_BASE}/api/content-pack/active/${TECHNIQUE_ID}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data?.detail || "Failed to load action verb pack");
-        }
-
-        const items = Array.isArray(data?.items) ? data.items : [];
-        const cleanedItems = items
-          .map(normaliseActionVerbItem)
-          .filter((item) => item.verb && item.image);
-
-        if (cleanedItems.length > 0) {
-          setContentSource("pack");
-          setBaseItems(cleanedItems);
-        } else {
-          setContentSource("pack");
-          setBaseItems([]);
-          setPackError("No action verb items found in active pack.");
-        }
-      } catch (err) {
-        setPackError(String(err.message || err));
-        setContentSource("pack");
-        setBaseItems([]);
-      }
-    };
-
-    loadPack();
-  }, [getToken]);
-
-  const sessionItems = useMemo(() => {
-    const shuffled = shuffleItems(baseItems || []);
-    return shuffled.slice(0, Math.min(SESSION_SIZE, shuffled.length));
-  }, [sessionSeed, baseItems]);
-
-  const currentItem = sessionItems[currentIndex];
-
-  useEffect(() => {
+  const resetSessionState = () => {
     clearAdvanceTimeout(advanceTimeoutRef);
     stopSpeaking();
 
@@ -263,7 +225,80 @@ export default function ActionVerbNaming() {
     setAttemptNum(1);
     setShowHint(false);
     setItemResults([]);
-  }, [sessionItems]);
+  };
+
+  useEffect(() => {
+    const loadPack = async () => {
+      setPackError(null);
+      setIsPackLoading(true);
+      setContentSource("local");
+      setBaseItems([]);
+      setSessionItems([]);
+      resetSessionState();
+
+      try {
+        const token = await getToken();
+
+        if (!token) {
+          setContentSource("local");
+          setBaseItems([]);
+          setSessionItems([]);
+          return;
+        }
+
+        const response = await fetch(
+          `${API_BASE}/api/content-pack/active/${TECHNIQUE_ID}?mode=${selectedMode}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data?.detail || "Failed to load action verb pack");
+        }
+
+        const resolvedMode = normaliseContentMode(
+          response.headers.get("X-ReLingo-Resolved-Mode")
+        );
+
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const cleanedItems = items
+          .map(normaliseActionVerbItem)
+          .filter((item) => item.verb && item.image);
+
+        if (cleanedItems.length > 0) {
+          setContentSource(
+            resolvedMode === CURATED_MODE ? "curated" : "personalised"
+          );
+          setBaseItems(cleanedItems);
+          setSessionItems(buildSessionItems(cleanedItems));
+        } else {
+          setContentSource("local");
+          setBaseItems([]);
+          setSessionItems([]);
+          setPackError(
+            selectedMode === CURATED_MODE
+              ? "No curated action verb items found."
+              : "No personalised action verb items found."
+          );
+        }
+      } catch (err) {
+        setPackError(String(err.message || err));
+        setContentSource("local");
+        setBaseItems([]);
+        setSessionItems([]);
+      } finally {
+        setIsPackLoading(false);
+      }
+    };
+
+    loadPack();
+  }, [getToken, selectedMode]);
+
+  const currentItem = !isPackLoading ? sessionItems[currentIndex] : null;
 
   const resetForNextItem = (nextIndex) => {
     clearAdvanceTimeout(advanceTimeoutRef);
@@ -340,9 +375,10 @@ export default function ActionVerbNaming() {
       const points = pointsForAttempt(attemptNum);
       const feedbackText = `Correct! (+${points})`;
 
-
       const speechText = correctVerb
-        ? `Correct. The action is ${correctVerb}. You earned ${points} point${points === 1 ? "" : "s"}.`
+        ? `Correct. The action is ${correctVerb}. You earned ${points} point${
+            points === 1 ? "" : "s"
+          }.`
         : `Correct. You earned ${points} point${points === 1 ? "" : "s"}.`;
 
       setFeedback(feedbackText);
@@ -442,7 +478,7 @@ export default function ActionVerbNaming() {
   };
 
   const startRecording = async () => {
-    if (isProcessing || completed || lockedUntilNext) return;
+    if (isPackLoading || isProcessing || completed || lockedUntilNext) return;
 
     try {
       setError(null);
@@ -529,16 +565,28 @@ export default function ActionVerbNaming() {
   }, [completed, sessionPoints, sessionItems.length, itemResults, getToken]);
 
   const resetSession = () => {
-    setSessionSeed((seed) => seed + 1);
+    resetSessionState();
+    setSessionItems(buildSessionItems(baseItems));
   };
 
-  const recordDisabled = completed || isProcessing || lockedUntilNext;
-  const progressDisplay = buildProgressDisplay(
-    currentIndex,
-    completed,
-    sessionItems.length
-  );
-  const cueLetter = !completed && currentItem ? getCueFromVerb(currentItem.verb) : "";
+  const recordDisabled =
+    isPackLoading || completed || isProcessing || lockedUntilNext;
+
+  const progressDisplay = isPackLoading
+    ? 0
+    : buildProgressDisplay(currentIndex, completed, sessionItems.length);
+
+  const cueLetter = !isPackLoading && !completed && currentItem
+    ? getCueFromVerb(currentItem.verb)
+    : "";
+
+  const sourceLabel = isPackLoading
+    ? "Loading..."
+    : contentSource === "curated"
+    ? "Curated Library"
+    : contentSource === "personalised"
+    ? "Personalised Pack"
+    : "Default";
 
   return (
     <div className="basic-speech-content">
@@ -557,14 +605,14 @@ export default function ActionVerbNaming() {
             <strong>Session points:</strong> {sessionPoints}
           </span>
 
-          {!completed && (
+          {!completed && !isPackLoading && (
             <span style={{ marginLeft: 12 }}>
               <strong>Attempt:</strong> {attemptNum}/3
             </span>
           )}
 
           <span style={{ marginLeft: 12, opacity: 0.85 }}>
-            <strong>Source:</strong> {contentSource === "pack" ? "Personalised" : "Default"}
+            <strong>Source:</strong> {sourceLabel}
           </span>
 
           <button
@@ -596,7 +644,18 @@ export default function ActionVerbNaming() {
 
         <div className="practice-cards">
           <div className="practice-card">
-            {!completed && currentItem && (
+            {isPackLoading && (
+              <div style={{ padding: "2rem 1rem", textAlign: "center" }}>
+                <h3 style={{ marginBottom: "1rem" }}>Loading session...</h3>
+                <p style={{ opacity: 0.8 }}>
+                  Preparing{" "}
+                  {selectedMode === CURATED_MODE ? "curated" : "personalised"}{" "}
+                  content.
+                </p>
+              </div>
+            )}
+
+            {!isPackLoading && !completed && currentItem && (
               <div className="image-container">
                 <img
                   src={resolveImagePath(currentItem.image)}
@@ -640,7 +699,7 @@ export default function ActionVerbNaming() {
               </div>
             )}
 
-            {!completed && (
+            {!isPackLoading && !completed && (
               <div className="recording-section">
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
@@ -656,14 +715,14 @@ export default function ActionVerbNaming() {
               </div>
             )}
 
-            {!completed && audioResult && (
+            {!isPackLoading && !completed && audioResult && (
               <div className="result-section">
                 <h4>You said:</h4>
                 <p>{audioResult}</p>
               </div>
             )}
 
-            {!completed && feedback && (
+            {!isPackLoading && !completed && feedback && (
               <div
                 className={`feedback-message ${feedback
                   .toLowerCase()
@@ -678,7 +737,7 @@ export default function ActionVerbNaming() {
 
             {error && <div className="error-message">{error}</div>}
 
-            {completed && (
+            {!isPackLoading && completed && (
               <div style={{ marginTop: 14 }}>
                 <h3>Session Complete</h3>
                 <p>

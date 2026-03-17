@@ -18,11 +18,19 @@ export function resolveImagePath(image) {
   const raw = String(image || "").trim();
 
   if (!raw) return "/placeholder.jpg";
-  if (raw.startsWith("/")) return raw;
+
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw;
+  }
+
+  if (raw.startsWith("/")) {
+    return raw;
+  }
 
   if (
     raw.startsWith("images/") ||
     raw.startsWith("SentenceImages/") ||
+    raw.startsWith("sentenceimages/") ||
     raw.startsWith("arasaac_images/") ||
     raw.startsWith("arasaac_sentence_images/") ||
     raw.startsWith("generated/")
@@ -30,7 +38,9 @@ export function resolveImagePath(image) {
     return `/${raw}`;
   }
 
-  return `/images/${raw}`;
+  // If a plain filename is passed, prefer public root instead of forcing /images/
+  // so fallback sentence assets can still work if they live elsewhere.
+  return `/${raw}`;
 }
 
 export function pointsForAttempt(attemptNumber) {
