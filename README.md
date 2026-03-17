@@ -150,7 +150,7 @@ python -m venv venv
 
 Activate:
 
-Windows: venv`\Scripts`{=tex}`\activate`{=tex}
+Windows: venv\Scripts\activate
 
 Mac/Linux: source venv/bin/activate
 
