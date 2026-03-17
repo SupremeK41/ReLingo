@@ -90,6 +90,17 @@ DEFAULT_FUNCTION_WORDS = {
     "before", "after", "during", "into", "onto", "over", "under",
 }
 
+REL_CUTOFF_DEFAULT = 0.34
+REL_CUTOFF_SENTENCE_CONTENT = 0.40
+REL_CUTOFF_SENTENCE_PHRASE = 0.38
+
+DIFFICULTY_MIN = 1
+DIFFICULTY_MAX = 3
+ADAPTIVE_OFFSET_MIN = -1
+ADAPTIVE_OFFSET_MAX = 1
+MIN_SESSIONS_FOR_ADAPTATION = 3
+MIN_ITEMS_FOR_ADAPTATION = 12
+
 
 # =========================================================
 # Text helpers
@@ -190,12 +201,6 @@ def _collapse_consecutive_duplicate_tokens(tokens: list[str], max_repeat: int = 
 
 
 def _collapse_repeated_ngrams(tokens: list[str], max_ngram: int = 3) -> list[str]:
-    """
-    Whisper can sometimes loop short phrases:
-    - reading reading reading
-    - the man is running the man is running
-    Keep only the first occurrence of the repeated chunk.
-    """
     if not tokens:
         return []
 
@@ -228,11 +233,6 @@ def _collapse_repeated_ngrams(tokens: list[str], max_ngram: int = 3) -> list[str
 
 
 def clean_transcript_for_display(text: str | None, max_words: int = 25) -> str:
-    """
-    Keep the visible transcript close to what the user actually said.
-    This is display cleanup only. Matching still uses the cleaned transcript text,
-    but helper prompts should not appear here.
-    """
     text = re.sub(r"\s+", " ", (text or "").strip())
     if not text:
         return ""
@@ -330,6 +330,7 @@ def token_matches_target(
     spoken_token: str,
     target_token: str,
     allow_phonetic: bool = True,
+    rel_cutoff: float = REL_CUTOFF_DEFAULT,
 ) -> bool:
     spoken_token = normalize_word(spoken_token)
     target_token = normalize_word(target_token)
@@ -339,7 +340,7 @@ def token_matches_target(
 
     if allow_phonetic:
         matched, _, rel, _ = is_match_phonetic(spoken_token, target_token)
-        return matched or rel <= 0.34
+        return matched or rel <= rel_cutoff
 
     if spoken_token == target_token:
         return True
@@ -390,7 +391,11 @@ def build_phrase_candidates(transcript_norm: str, target_text: str) -> list[str]
     return out
 
 
-def best_phrase_match(spoken_text: str, target_text: str) -> tuple[bool, int, float, bool]:
+def best_phrase_match(
+    spoken_text: str,
+    target_text: str,
+    rel_cutoff: float = REL_CUTOFF_DEFAULT,
+) -> tuple[bool, int, float, bool]:
     spoken_norm = normalize_text(spoken_text)
     target_norm = normalize_text(target_text)
 
@@ -404,7 +409,7 @@ def best_phrase_match(spoken_text: str, target_text: str) -> tuple[bool, int, fl
 
     for candidate in candidates:
         matched, dist, rel, phon = is_match_phonetic(candidate, target_norm)
-        score_tuple = (0 if matched else 1, rel, dist)
+        score_tuple = (0 if (matched or rel <= rel_cutoff) else 1, rel, dist)
 
         if score_tuple < best_tuple:
             best_tuple = score_tuple
@@ -418,6 +423,7 @@ def target_item_present(
     transcript_tokens: list[str],
     target_item: str,
     allow_phonetic: bool = True,
+    rel_cutoff: float = REL_CUTOFF_DEFAULT,
 ) -> bool:
     target_item = normalize_text(target_item)
     if not target_item:
@@ -427,18 +433,28 @@ def target_item_present(
 
     if len(target_parts) == 1:
         return any(
-            token_matches_target(token, target_item, allow_phonetic=allow_phonetic)
+            token_matches_target(
+                token,
+                target_item,
+                allow_phonetic=allow_phonetic,
+                rel_cutoff=rel_cutoff,
+            )
             for token in transcript_tokens
         )
 
-    matched, _, rel, _ = best_phrase_match(transcript_norm, target_item)
-    return matched or rel <= 0.34
+    matched, _, rel, _ = best_phrase_match(
+        transcript_norm,
+        target_item,
+        rel_cutoff=rel_cutoff,
+    )
+    return matched or rel <= rel_cutoff
 
 
 def compute_target_coverage(
     transcript_norm: str,
     target_items: list[str],
     allow_phonetic: bool = True,
+    rel_cutoff: float = REL_CUTOFF_DEFAULT,
 ) -> tuple[int, float, list[str]]:
     transcript_tokens = tokenize(transcript_norm)
     matched_items: list[str] = []
@@ -449,6 +465,7 @@ def compute_target_coverage(
             transcript_tokens,
             item,
             allow_phonetic=allow_phonetic,
+            rel_cutoff=rel_cutoff,
         ):
             matched_items.append(item)
 
@@ -523,11 +540,6 @@ def _looks_like_short_cvc(word: str) -> bool:
 
 
 def _expand_action_answer_variants(answer: str) -> list[str]:
-    """
-    Small helper so action naming can accept things like:
-    run / running / runs
-    write / writing
-    """
     answer = normalize_text(answer)
     if not answer:
         return []
@@ -614,7 +626,7 @@ def build_target_pool(
 def best_match_against_target_pool(
     transcript_norm: str,
     target_pool: list[str],
-    rel_cutoff: float = 0.34,
+    rel_cutoff: float = REL_CUTOFF_DEFAULT,
 ) -> tuple[bool | None, str | None, int | None, float | None, bool | None]:
     if not transcript_norm or not target_pool:
         return None, None, None, None, None
@@ -628,7 +640,7 @@ def best_match_against_target_pool(
 
         for candidate in candidates:
             matched, dist, rel, phon = is_match_phonetic(candidate, target)
-            score_tuple = (0 if matched else 1, rel, dist)
+            score_tuple = (0 if (matched or rel <= rel_cutoff) else 1, rel, dist)
 
             if best_tuple is None or score_tuple < best_tuple:
                 best_tuple = score_tuple
@@ -645,7 +657,7 @@ def best_match_against_target_pool(
 
 
 # =========================================================
-# Shared whisper kwargs
+# Shared whisper / audio helpers
 # =========================================================
 
 def _build_whisper_kwargs() -> dict:
@@ -658,6 +670,298 @@ def _build_whisper_kwargs() -> dict:
         "logprob_threshold": -1.0,
         "compression_ratio_threshold": 2.4,
     }
+
+
+def _temp_audio_path() -> str:
+    return f"{TEMP_AUDIO_DIR}/{uuid.uuid4().hex}.webm"
+
+
+def _save_upload_to_temp(upload: UploadFile, temp_path: str) -> int:
+    with open(temp_path, "wb") as buffer:
+        shutil.copyfileobj(upload.file, buffer)
+    return os.path.getsize(temp_path)
+
+
+def _cleanup_temp_file(temp_path: str) -> None:
+    if os.path.exists(temp_path):
+        os.remove(temp_path)
+
+
+def _contains_prompt_leak(transcript_norm: str) -> bool:
+    return any(phrase in transcript_norm for phrase in _PROMPT_LEAK_PHRASES)
+
+
+def _transcribe_audio_file(
+    temp_path: str,
+    *,
+    max_words: int,
+    vocab_list: list[str] | None = None,
+    use_initial_prompt: bool = False,
+) -> tuple[dict, str, str, float]:
+    kwargs = _build_whisper_kwargs()
+
+    if use_initial_prompt and vocab_list:
+        kwargs["initial_prompt"] = "Words: " + ", ".join(vocab_list)
+
+    result = whisper_model.transcribe(temp_path, **kwargs)
+    raw_text = (result.get("text") or "").strip()
+    text = clean_transcript_for_display(raw_text, max_words=max_words)
+    transcript_norm = normalize_text(text)
+    max_no_speech_prob = extract_max_no_speech_prob(result)
+
+    return result, text, transcript_norm, max_no_speech_prob
+
+
+def _speech_rejection_payload(
+    *,
+    target: str | None,
+    attempt_num: int | None,
+    cue_shown: int | None,
+    too_short: bool,
+    no_speech_prob: float,
+    matched_default,
+    extra: dict | None = None,
+) -> dict:
+    payload = {
+        "text": "",
+        "matched": matched_default,
+        "matched_target": None,
+        "best_guess": None,
+        "distance": None,
+        "rel_distance": None,
+        "phonetic_used": None,
+        "target": target,
+        "attempt_num": attempt_num,
+        "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+        "too_short": too_short,
+        "no_speech_prob": no_speech_prob,
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _sfa_rejection_payload(
+    *,
+    target_word: str,
+    attempt_num: int | None,
+    cue_shown: int | None,
+    too_short: bool,
+    no_speech_prob: float,
+    reason: str,
+    extra: dict | None = None,
+) -> dict:
+    payload = {
+        "text": "",
+        "matched": False,
+        "best_guess": None,
+        "distance": None,
+        "rel_distance": None,
+        "phonetic_used": None,
+        "confidence": 0.0,
+        "reason": reason,
+        "target": target_word,
+        "attempt_num": attempt_num,
+        "cue_shown": bool(cue_shown) if cue_shown is not None else None,
+        "too_short": too_short,
+        "no_speech_prob": no_speech_prob,
+        "used_direct_match": False,
+        "used_llm_guess": False,
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _sentence_empty_eval(
+    *,
+    too_short: bool,
+    no_speech_prob: float,
+) -> dict:
+    return {
+        "text": "",
+        "content_hits": 0,
+        "function_hits": 0,
+        "content_accuracy": 0.0,
+        "function_accuracy": 0.0,
+        "similarity_score": 0.0,
+        "weighted_accuracy": 0.0,
+        "rel_distance": 1.0,
+        "score_level": 0,
+        "too_short": too_short,
+        "no_speech_prob": no_speech_prob,
+        "exact_match": False,
+    }
+
+
+# =========================================================
+# Difficulty adaptation helpers
+# Explicit difficulty meanings:
+#
+# Image Naming:
+# - 1: very common, concrete, visually obvious nouns
+# - 2: everyday nouns with a bit more lexical load / specificity
+# - 3: longer, lower-frequency, more specific concrete nouns
+#
+# Naming with Cues:
+# - target difficulty follows image naming
+# - cue support remains helpful, but harder levels can be a bit less direct
+#
+# Action Verb Naming:
+# - 1: very common, visually obvious actions
+# - 2: everyday actions with a bit more specificity
+# - 3: less frequent / more specific actions or slightly heavier verb forms
+#
+# Semantic Feature Analysis:
+# - 1: highly familiar, easy-to-describe concrete concepts
+# - 2: still everyday, but a little more specific
+# - 3: more specific concepts with slightly richer semantic demand
+#
+# Sentence Repetition:
+# - 1: short sentences, common words, simple syntax
+# - 2: medium length, slightly richer vocabulary
+# - 3: longer sentences, more content words, harder vocabulary / phrasing
+#
+# Adaptation rules:
+# - profile difficulty stays the main anchor
+# - adaptive offset is only -1, 0, or +1
+# - not enough data -> no change
+# - good sustained performance -> +1
+# - clear struggle -> -1
+# =========================================================
+
+def _clamp_int(value: int, min_value: int, max_value: int) -> int:
+    return max(min_value, min(max_value, value))
+
+
+def _safe_ratio(numerator: float, denominator: float) -> float:
+    return numerator / denominator if denominator > 0 else 0.0
+
+
+def _technique_performance_snapshot(stats: UserTechniqueStats | None) -> dict:
+    if not stats:
+        return {
+            "sessions_played": 0,
+            "total_items": 0,
+            "first_try_accuracy": 0.0,
+            "second_try_accuracy": 0.0,
+            "cue_success_rate": 0.0,
+            "incorrect_rate": 0.0,
+            "avg_attempts_per_item": 0.0,
+            "lifetime_avg_sentence_accuracy": 0.0,
+        }
+
+    total_items = _safe_int(stats.total_items)
+    total_attempts = _safe_int(stats.total_attempts)
+    correct_first = _safe_int(stats.correct_first)
+    correct_second = _safe_int(stats.correct_second)
+    correct_after_cue = _safe_int(stats.correct_after_cue)
+    incorrect = _safe_int(stats.incorrect)
+    sentence_items_evaluated = _safe_int(stats.sentence_items_evaluated)
+
+    return {
+        "sessions_played": _safe_int(stats.sessions_played),
+        "total_items": total_items,
+        "first_try_accuracy": _safe_ratio(correct_first, total_items),
+        "second_try_accuracy": _safe_ratio(correct_second, total_items),
+        "cue_success_rate": _safe_ratio(correct_after_cue, total_items),
+        "incorrect_rate": _safe_ratio(incorrect, total_items),
+        "avg_attempts_per_item": _safe_ratio(total_attempts, total_items),
+        "lifetime_avg_sentence_accuracy": _safe_ratio(
+            float(stats.total_sentence_accuracy or 0.0),
+            sentence_items_evaluated,
+        ),
+    }
+
+
+def _has_enough_data_for_adaptation(snapshot: dict) -> bool:
+    return (
+        int(snapshot.get("sessions_played") or 0) >= MIN_SESSIONS_FOR_ADAPTATION
+        and int(snapshot.get("total_items") or 0) >= MIN_ITEMS_FOR_ADAPTATION
+    )
+
+
+def _sentence_adaptive_offset(snapshot: dict) -> int:
+    sentence_accuracy = float(snapshot.get("lifetime_avg_sentence_accuracy") or 0.0)
+    first_try_accuracy = float(snapshot.get("first_try_accuracy") or 0.0)
+    avg_attempts = float(snapshot.get("avg_attempts_per_item") or 0.0)
+    incorrect_rate = float(snapshot.get("incorrect_rate") or 0.0)
+
+    if (
+        sentence_accuracy >= 0.82
+        and first_try_accuracy >= 0.55
+        and avg_attempts <= 1.6
+        and incorrect_rate <= 0.20
+    ):
+        return 1
+
+    if (
+        sentence_accuracy <= 0.48
+        or (avg_attempts >= 2.4 and incorrect_rate >= 0.35)
+    ):
+        return -1
+
+    return 0
+
+
+def _word_based_adaptive_offset(snapshot: dict) -> int:
+    first_try_accuracy = float(snapshot.get("first_try_accuracy") or 0.0)
+    avg_attempts = float(snapshot.get("avg_attempts_per_item") or 0.0)
+    cue_success_rate = float(snapshot.get("cue_success_rate") or 0.0)
+    incorrect_rate = float(snapshot.get("incorrect_rate") or 0.0)
+
+    if (
+        first_try_accuracy >= 0.72
+        and avg_attempts <= 1.45
+        and cue_success_rate <= 0.15
+        and incorrect_rate <= 0.18
+    ):
+        return 1
+
+    if (
+        first_try_accuracy <= 0.35
+        or incorrect_rate >= 0.40
+        or avg_attempts >= 2.5
+    ):
+        return -1
+
+    return 0
+
+
+def _compute_adaptive_offset_for_technique(
+    technique_id: str,
+    stats: UserTechniqueStats | None,
+) -> tuple[int, dict]:
+    snapshot = _technique_performance_snapshot(stats)
+
+    if not _has_enough_data_for_adaptation(snapshot):
+        return 0, snapshot
+
+    if technique_id == "sentence_repetition":
+        offset = _sentence_adaptive_offset(snapshot)
+    else:
+        offset = _word_based_adaptive_offset(snapshot)
+
+    offset = _clamp_int(offset, ADAPTIVE_OFFSET_MIN, ADAPTIVE_OFFSET_MAX)
+    return offset, snapshot
+
+
+def _effective_difficulty_for_pack(
+    profile_difficulty: int,
+    technique_id: str,
+    stats: UserTechniqueStats | None,
+) -> tuple[int, int, dict]:
+    base_difficulty = _clamp_int(profile_difficulty, DIFFICULTY_MIN, DIFFICULTY_MAX)
+    adaptive_offset, snapshot = _compute_adaptive_offset_for_technique(
+        technique_id=technique_id,
+        stats=stats,
+    )
+    effective_difficulty = _clamp_int(
+        base_difficulty + adaptive_offset,
+        DIFFICULTY_MIN,
+        DIFFICULTY_MAX,
+    )
+    return effective_difficulty, adaptive_offset, snapshot
 
 
 # =========================================================
@@ -855,9 +1159,10 @@ def _evaluate_sfa_response(
     direct_matched, direct_dist, direct_rel, direct_phon = best_phrase_match(
         transcript_norm,
         target_norm,
+        rel_cutoff=REL_CUTOFF_DEFAULT,
     )
 
-    if direct_matched or direct_rel <= 0.34:
+    if direct_matched or direct_rel <= REL_CUTOFF_DEFAULT:
         return {
             "matched": True,
             "best_guess": target_word,
@@ -899,9 +1204,10 @@ def _evaluate_sfa_response(
         guess_matched, guess_dist, guess_rel, guess_phon = best_phrase_match(
             guessed_word,
             target_norm,
+            rel_cutoff=REL_CUTOFF_DEFAULT,
         )
 
-        if guess_matched or guess_rel <= 0.34:
+        if guess_matched or guess_rel <= REL_CUTOFF_DEFAULT:
             return {
                 "matched": True,
                 "best_guess": guessed_word,
@@ -919,6 +1225,7 @@ def _evaluate_sfa_response(
             transcript_tokens,
             guessed_word,
             allow_phonetic=True,
+            rel_cutoff=REL_CUTOFF_DEFAULT,
         ):
             return {
                 "matched": False,
@@ -1282,8 +1589,8 @@ async def save_personalisation(
 
     profile.interests_text = payload.interests_text or ""
     profile.avoid_topics_text = payload.avoid_topics_text
-    profile.difficulty = max(1, min(3, int(payload.difficulty or 1)))
-    profile.sentence_length = max(1, min(3, int(payload.sentence_length or 1)))
+    profile.difficulty = _clamp_int(int(payload.difficulty or 1), DIFFICULTY_MIN, DIFFICULTY_MAX)
+    profile.sentence_length = _clamp_int(int(payload.sentence_length or 1), DIFFICULTY_MIN, DIFFICULTY_MAX)
     profile.cue_enabled = bool(payload.cue_enabled)
     profile.allow_generated_images = allow_generated_images
     profile.image_generation_mode = requested_mode
@@ -1336,11 +1643,24 @@ async def generate_personalised_pack(
     n_items = int(payload.n_items or 10)
     n_items = max(1, min(25, n_items))
 
+    base_difficulty = _clamp_int(
+        int(payload.difficulty or profile.difficulty or 1),
+        DIFFICULTY_MIN,
+        DIFFICULTY_MAX,
+    )
+
+    technique_stats = await UserTechniqueStats.get_or_none(user=user, technique_id=technique_id)
+    effective_difficulty, adaptive_offset, adaptation_snapshot = _effective_difficulty_for_pack(
+        profile_difficulty=base_difficulty,
+        technique_id=technique_id,
+        stats=technique_stats,
+    )
+
     profile_dict = {
         "interests_text": profile.interests_text or "",
         "avoid_topics_text": profile.avoid_topics_text or "",
-        "difficulty": int(payload.difficulty or profile.difficulty or 1),
-        "sentence_length": int(profile.sentence_length or 1),
+        "difficulty": effective_difficulty,
+        "sentence_length": _clamp_int(int(profile.sentence_length or 1), DIFFICULTY_MIN, DIFFICULTY_MAX),
         "cue_enabled": bool(profile.cue_enabled),
         "allow_generated_images": bool(profile.allow_generated_images),
         "image_generation_mode": profile.image_generation_mode or "none",
@@ -1348,6 +1668,16 @@ async def generate_personalised_pack(
 
     print("PROFILE SETTINGS:")
     print(profile_dict)
+    print("DIFFICULTY ADAPTATION:")
+    print(
+        {
+            "technique_id": technique_id,
+            "base_difficulty": base_difficulty,
+            "adaptive_offset": adaptive_offset,
+            "effective_difficulty": effective_difficulty,
+            "snapshot": adaptation_snapshot,
+        }
+    )
 
     try:
         pack = await build_content_pack(profile_dict, technique_id, n_items=n_items)
@@ -1356,7 +1686,7 @@ async def generate_personalised_pack(
 
     existing = await UserContentPack.get_or_none(user=user, technique_id=technique_id)
     if existing:
-        existing.difficulty = int(pack.get("difficulty") or profile_dict["difficulty"])
+        existing.difficulty = int(pack.get("difficulty") or effective_difficulty)
         existing.pack_json = pack
         existing.active = True
         await existing.save()
@@ -1364,7 +1694,7 @@ async def generate_personalised_pack(
         await UserContentPack.create(
             user=user,
             technique_id=technique_id,
-            difficulty=int(pack.get("difficulty") or profile_dict["difficulty"]),
+            difficulty=int(pack.get("difficulty") or effective_difficulty),
             pack_json=pack,
             active=True,
         )
@@ -1677,16 +2007,11 @@ async def speech_to_text(
     attempt_num: int | None = Form(default=None),
     cue_shown: int | None = Form(default=None),
 ):
-    temp_path = f"{TEMP_AUDIO_DIR}/{uuid.uuid4().hex}.webm"
+    temp_path = _temp_audio_path()
 
     try:
-        with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(audio.file, buffer)
-
-        file_size = os.path.getsize(temp_path)
+        file_size = _save_upload_to_temp(audio, temp_path)
         too_short = file_size < _MIN_WEBM_BYTES
-
-        kwargs = _build_whisper_kwargs()
 
         vocab_list: list[str] = []
         if vocab:
@@ -1694,48 +2019,33 @@ async def speech_to_text(
                 [value.strip() for value in vocab.split(",") if value.strip()]
             )[:12]
 
-        if vocab_list and not too_short:
-            kwargs["initial_prompt"] = "Words: " + ", ".join(vocab_list)
-
-        result = whisper_model.transcribe(temp_path, **kwargs)
-        raw_text = (result.get("text") or "").strip()
-        text = clean_transcript_for_display(raw_text)
-        transcript_norm = normalize_text(text)
-
-        max_no_speech_prob = extract_max_no_speech_prob(result)
+        _, text, transcript_norm, max_no_speech_prob = _transcribe_audio_file(
+            temp_path,
+            max_words=25,
+            vocab_list=vocab_list,
+            use_initial_prompt=bool(vocab_list and not too_short),
+        )
 
         if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
-            return {
-                "text": "",
-                "matched": False if target else None,
-                "matched_target": None,
-                "best_guess": None,
-                "distance": None,
-                "rel_distance": None,
-                "phonetic_used": None,
-                "target": target,
-                "attempt_num": attempt_num,
-                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
-                "too_short": too_short,
-                "no_speech_prob": max_no_speech_prob,
-            }
+            return _speech_rejection_payload(
+                target=target,
+                attempt_num=attempt_num,
+                cue_shown=cue_shown,
+                too_short=too_short,
+                no_speech_prob=max_no_speech_prob,
+                matched_default=False if target else None,
+            )
 
-        if any(phrase in transcript_norm for phrase in _PROMPT_LEAK_PHRASES):
-            return {
-                "text": "",
-                "matched": False if target else None,
-                "matched_target": None,
-                "best_guess": None,
-                "distance": None,
-                "rel_distance": None,
-                "phonetic_used": None,
-                "target": target,
-                "attempt_num": attempt_num,
-                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
-                "too_short": False,
-                "no_speech_prob": max_no_speech_prob,
-                "prompt_leak": True,
-            }
+        if _contains_prompt_leak(transcript_norm):
+            return _speech_rejection_payload(
+                target=target,
+                attempt_num=attempt_num,
+                cue_shown=cue_shown,
+                too_short=False,
+                no_speech_prob=max_no_speech_prob,
+                matched_default=False if target else None,
+                extra={"prompt_leak": True},
+            )
 
         best_guess = None
         best_dist = 10**9
@@ -1751,7 +2061,7 @@ async def speech_to_text(
 
                 for candidate in vocab_candidates:
                     matched, dist, rel, phon = is_match_phonetic(candidate, vocab_target)
-                    score_tuple = (0 if matched else 1, rel, dist)
+                    score_tuple = (0 if (matched or rel <= REL_CUTOFF_DEFAULT) else 1, rel, dist)
 
                     if best_score_tuple is None or score_tuple < best_score_tuple:
                         best_score_tuple = score_tuple
@@ -1774,7 +2084,11 @@ async def speech_to_text(
                 expand_action_variants=bool(acceptable_answers),
             )
             matched_vs_target, matched_target, dist_vs_target, rel_vs_target, phon_vs_target = (
-                best_match_against_target_pool(transcript_norm, target_pool, rel_cutoff=0.34)
+                best_match_against_target_pool(
+                    transcript_norm,
+                    target_pool,
+                    rel_cutoff=REL_CUTOFF_DEFAULT,
+                )
             )
 
         final_matched = (
@@ -1802,8 +2116,7 @@ async def speech_to_text(
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(error)}")
 
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        _cleanup_temp_file(temp_path)
 
 
 # =========================================================
@@ -1823,16 +2136,11 @@ async def action_verb_eval(
     attempt_num: int | None = Form(default=None),
     cue_shown: int | None = Form(default=None),
 ):
-    temp_path = f"{TEMP_AUDIO_DIR}/{uuid.uuid4().hex}.webm"
+    temp_path = _temp_audio_path()
 
     try:
-        with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(audio.file, buffer)
-
-        file_size = os.path.getsize(temp_path)
+        file_size = _save_upload_to_temp(audio, temp_path)
         too_short = file_size < _MIN_WEBM_BYTES
-
-        kwargs = _build_whisper_kwargs()
 
         _ = _dedupe_preserve_order(
             [value.strip() for value in (vocab or "").split(",") if value.strip()]
@@ -1844,52 +2152,42 @@ async def action_verb_eval(
             expand_action_variants=True,
         )
 
-        result = whisper_model.transcribe(temp_path, **kwargs)
-        raw_text = (result.get("text") or "").strip()
-        text = clean_transcript_for_display(raw_text)
-        transcript_norm = normalize_text(text)
-
-        max_no_speech_prob = extract_max_no_speech_prob(result)
+        _, text, transcript_norm, max_no_speech_prob = _transcribe_audio_file(
+            temp_path,
+            max_words=25,
+            vocab_list=None,
+            use_initial_prompt=False,
+        )
 
         if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
-            return {
-                "text": "",
-                "matched": False,
-                "matched_target": None,
-                "best_guess": None,
-                "distance": None,
-                "rel_distance": None,
-                "phonetic_used": None,
-                "target": target_verb,
-                "acceptable_answers": target_pool,
-                "attempt_num": attempt_num,
-                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
-                "too_short": too_short,
-                "no_speech_prob": max_no_speech_prob,
-            }
+            payload = _speech_rejection_payload(
+                target=target_verb,
+                attempt_num=attempt_num,
+                cue_shown=cue_shown,
+                too_short=too_short,
+                no_speech_prob=max_no_speech_prob,
+                matched_default=False,
+            )
+            payload["acceptable_answers"] = target_pool
+            return payload
 
-        if any(phrase in transcript_norm for phrase in _PROMPT_LEAK_PHRASES):
-            return {
-                "text": "",
-                "matched": False,
-                "matched_target": None,
-                "best_guess": None,
-                "distance": None,
-                "rel_distance": None,
-                "phonetic_used": None,
-                "target": target_verb,
-                "acceptable_answers": target_pool,
-                "attempt_num": attempt_num,
-                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
-                "too_short": False,
-                "no_speech_prob": max_no_speech_prob,
-                "prompt_leak": True,
-            }
+        if _contains_prompt_leak(transcript_norm):
+            payload = _speech_rejection_payload(
+                target=target_verb,
+                attempt_num=attempt_num,
+                cue_shown=cue_shown,
+                too_short=False,
+                no_speech_prob=max_no_speech_prob,
+                matched_default=False,
+                extra={"prompt_leak": True},
+            )
+            payload["acceptable_answers"] = target_pool
+            return payload
 
         matched, matched_target, dist, rel, phon = best_match_against_target_pool(
             transcript_norm,
             target_pool,
-            rel_cutoff=0.34,
+            rel_cutoff=REL_CUTOFF_DEFAULT,
         )
 
         final_matched = bool(matched) if matched is not None else False
@@ -1914,8 +2212,7 @@ async def action_verb_eval(
         raise HTTPException(status_code=500, detail=f"Action verb evaluation failed: {str(error)}")
 
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        _cleanup_temp_file(temp_path)
 
 
 # =========================================================
@@ -1934,66 +2231,43 @@ async def sfa_eval(
     attempt_num: int | None = Form(default=None),
     cue_shown: int | None = Form(default=None),
 ):
-    temp_path = f"{TEMP_AUDIO_DIR}/{uuid.uuid4().hex}.webm"
+    temp_path = _temp_audio_path()
 
     try:
-        with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(audio.file, buffer)
-
-        file_size = os.path.getsize(temp_path)
+        file_size = _save_upload_to_temp(audio, temp_path)
         too_short = file_size < _MIN_WEBM_BYTES
-
-        kwargs = _build_whisper_kwargs()
 
         candidate_words = _dedupe_preserve_order(
             [value.strip() for value in (vocab or "").split(",") if value.strip()]
         )[:12]
 
-        result = whisper_model.transcribe(temp_path, **kwargs)
-        raw_text = (result.get("text") or "").strip()
-        text = clean_transcript_for_display(raw_text, max_words=35)
-        transcript_norm = normalize_text(text)
-
-        max_no_speech_prob = extract_max_no_speech_prob(result)
+        _, text, transcript_norm, max_no_speech_prob = _transcribe_audio_file(
+            temp_path,
+            max_words=35,
+            vocab_list=None,
+            use_initial_prompt=False,
+        )
 
         if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
-            return {
-                "text": "",
-                "matched": False,
-                "best_guess": None,
-                "distance": None,
-                "rel_distance": None,
-                "phonetic_used": None,
-                "confidence": 0.0,
-                "reason": "No usable speech detected.",
-                "target": target_word,
-                "attempt_num": attempt_num,
-                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
-                "too_short": too_short,
-                "no_speech_prob": max_no_speech_prob,
-                "used_direct_match": False,
-                "used_llm_guess": False,
-            }
+            return _sfa_rejection_payload(
+                target_word=target_word,
+                attempt_num=attempt_num,
+                cue_shown=cue_shown,
+                too_short=too_short,
+                no_speech_prob=max_no_speech_prob,
+                reason="No usable speech detected.",
+            )
 
-        if any(phrase in transcript_norm for phrase in _PROMPT_LEAK_PHRASES):
-            return {
-                "text": "",
-                "matched": False,
-                "best_guess": None,
-                "distance": None,
-                "rel_distance": None,
-                "phonetic_used": None,
-                "confidence": 0.0,
-                "reason": "Prompt leakage detected.",
-                "target": target_word,
-                "attempt_num": attempt_num,
-                "cue_shown": bool(cue_shown) if cue_shown is not None else None,
-                "too_short": False,
-                "no_speech_prob": max_no_speech_prob,
-                "prompt_leak": True,
-                "used_direct_match": False,
-                "used_llm_guess": False,
-            }
+        if _contains_prompt_leak(transcript_norm):
+            return _sfa_rejection_payload(
+                target_word=target_word,
+                attempt_num=attempt_num,
+                cue_shown=cue_shown,
+                too_short=False,
+                no_speech_prob=max_no_speech_prob,
+                reason="Prompt leakage detected.",
+                extra={"prompt_leak": True},
+            )
 
         evaluation = _evaluate_sfa_response(
             transcript_text=text,
@@ -2023,12 +2297,13 @@ async def sfa_eval(
         raise HTTPException(status_code=500, detail=f"SFA evaluation failed: {str(error)}")
 
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        _cleanup_temp_file(temp_path)
 
 
 # =========================================================
 # Sentence repetition eval
+# Still percentage-based, but keep content-word matching
+# forgiving enough for mild aphasia / pronunciation issues.
 # =========================================================
 
 @app.post("/api/sentence-eval")
@@ -2038,48 +2313,25 @@ async def sentence_eval(
     required_content: str = Form(...),
     required_function: str = Form(...),
 ):
-    temp_path = f"{TEMP_AUDIO_DIR}/{uuid.uuid4().hex}.webm"
+    temp_path = _temp_audio_path()
 
     try:
-        with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(audio.file, buffer)
-
-        file_size = os.path.getsize(temp_path)
+        file_size = _save_upload_to_temp(audio, temp_path)
         too_short = file_size < _MIN_WEBM_BYTES
 
-        result = whisper_model.transcribe(
+        _, text, transcript_norm, max_no_speech_prob = _transcribe_audio_file(
             temp_path,
-            language="en",
-            task="transcribe",
-            temperature=0,
-            condition_on_previous_text=False,
-            no_speech_threshold=0.6,
-            logprob_threshold=-1.0,
-            compression_ratio_threshold=2.4,
+            max_words=40,
+            vocab_list=None,
+            use_initial_prompt=False,
         )
-
-        raw_text = (result.get("text") or "").strip()
-        text = clean_transcript_for_display(raw_text, max_words=40)
-        transcript_norm = normalize_text(text)
         target_norm = normalize_text(target_sentence)
 
-        max_no_speech_prob = extract_max_no_speech_prob(result)
-
         if too_short or max_no_speech_prob >= _NO_SPEECH_PROB_CUTOFF:
-            return {
-                "text": "",
-                "content_hits": 0,
-                "function_hits": 0,
-                "content_accuracy": 0.0,
-                "function_accuracy": 0.0,
-                "similarity_score": 0.0,
-                "weighted_accuracy": 0.0,
-                "rel_distance": 1.0,
-                "score_level": 0,
-                "too_short": too_short,
-                "no_speech_prob": max_no_speech_prob,
-                "exact_match": False,
-            }
+            return _sentence_empty_eval(
+                too_short=too_short,
+                no_speech_prob=max_no_speech_prob,
+            )
 
         derived_content, derived_function = derive_targets_from_sentence(target_sentence)
         provided_content = parse_csv_list(required_content)
@@ -2111,12 +2363,14 @@ async def sentence_eval(
             transcript_norm,
             derived_content,
             allow_phonetic=True,
+            rel_cutoff=REL_CUTOFF_SENTENCE_CONTENT,
         )
 
         function_hits, function_accuracy, matched_function_items = compute_target_coverage(
             transcript_norm,
             derived_function,
             allow_phonetic=False,
+            rel_cutoff=0.20,
         )
 
         _, rel_distance, similarity_score = compute_similarity_score(transcript_norm, target_norm)
@@ -2135,6 +2389,9 @@ async def sentence_eval(
             score_level = 1
         else:
             score_level = 0
+
+        if score_level < 2 and content_accuracy >= 0.75 and rel_distance <= REL_CUTOFF_SENTENCE_PHRASE:
+            score_level = 2
 
         return {
             "text": text,
@@ -2161,8 +2418,7 @@ async def sentence_eval(
         raise HTTPException(status_code=500, detail=str(error))
 
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        _cleanup_temp_file(temp_path)
 
 
 # =========================================================

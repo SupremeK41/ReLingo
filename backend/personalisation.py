@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from openai import OpenAI
 
@@ -41,61 +41,104 @@ GENERATED_SENTENCE_DIR.mkdir(parents=True, exist_ok=True)
 GENERATED_SFA_DIR.mkdir(parents=True, exist_ok=True)
 GENERATED_ACTION_VERB_DIR.mkdir(parents=True, exist_ok=True)
 
+TECHNIQUE_OUTPUT_DIRS: dict[str, Path] = {
+    "image_naming": GENERATED_IMAGE_NAMING_DIR,
+    "naming_with_cues": GENERATED_NAMING_WITH_CUES_DIR,
+    "sentence_repetition": GENERATED_SENTENCE_DIR,
+    "semantic_feature_analysis": GENERATED_SFA_DIR,
+    "action_verb_naming": GENERATED_ACTION_VERB_DIR,
+}
 
-def load_image_catalog() -> list[dict]:
-    if not CATALOG_PATH.exists():
+TECHNIQUE_PUBLIC_DIRS: dict[str, str] = {
+    "image_naming": "generated/image_naming",
+    "naming_with_cues": "generated/naming_with_cues",
+    "sentence_repetition": "generated/sentence_repetition",
+    "semantic_feature_analysis": "generated/semantic_feature_analysis",
+    "action_verb_naming": "generated/action_verb_naming",
+}
+
+DIFFICULTY_MIN = 1
+DIFFICULTY_MAX = 3
+
+# Bounded pack mixes:
+# 1 -> mostly level 1, a little level 2
+# 2 -> mostly level 2, with some 1 and 3
+# 3 -> mostly level 3, some level 2
+DIFFICULTY_MIXES: dict[int, dict[int, float]] = {
+    1: {1: 0.80, 2: 0.20},
+    2: {1: 0.20, 2: 0.60, 3: 0.20},
+    3: {2: 0.30, 3: 0.70},
+}
+
+DEFAULT_FUNCTION_WORDS = {
+    "a", "an", "the",
+    "is", "am", "are", "was", "were", "be", "being", "been",
+    "to", "of", "in", "on", "at", "by", "for", "with", "from",
+    "and", "or", "but",
+    "will", "would", "can", "could", "should", "shall", "may", "might",
+    "do", "does", "did",
+    "has", "have", "had",
+    "he", "she", "it", "they", "we", "you", "i",
+    "him", "her", "them", "us",
+    "this", "that", "these", "those",
+    "my", "your", "his", "their", "our",
+    "as", "if", "than", "then", "so", "because", "while",
+    "before", "after", "during", "into", "onto", "over", "under",
+    "near", "around", "through", "across", "behind", "beside",
+}
+
+
+def _load_catalog_file(
+    path: Path,
+    list_key: str | None = None,
+    merge_keys: tuple[str, ...] | None = None,
+) -> list[dict]:
+    if not path.exists():
         return []
 
-    raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+    raw = json.loads(path.read_text(encoding="utf-8"))
 
-    if isinstance(raw, dict):
+    if isinstance(raw, list):
+        return [item for item in raw if isinstance(item, dict)]
+
+    if not isinstance(raw, dict):
+        return []
+
+    if merge_keys:
         merged: list[dict] = []
-        for key in ("image_naming", "naming_with_cues", "sentence_repetition"):
+        for key in merge_keys:
             value = raw.get(key, [])
             if isinstance(value, list):
                 merged.extend(item for item in value if isinstance(item, dict))
         return merged
 
-    if isinstance(raw, list):
-        return [item for item in raw if isinstance(item, dict)]
+    if list_key:
+        value = raw.get(list_key, [])
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
 
     return []
+
+
+def load_image_catalog() -> list[dict]:
+    return _load_catalog_file(
+        CATALOG_PATH,
+        merge_keys=("image_naming", "naming_with_cues", "sentence_repetition"),
+    )
 
 
 def load_semantic_feature_catalog() -> list[dict]:
-    if not SFA_CATALOG_PATH.exists():
-        return []
-
-    raw = json.loads(SFA_CATALOG_PATH.read_text(encoding="utf-8"))
-
-    if isinstance(raw, dict):
-        value = raw.get("semantic_feature_analysis", [])
-        if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
-        return []
-
-    if isinstance(raw, list):
-        return [item for item in raw if isinstance(item, dict)]
-
-    return []
+    return _load_catalog_file(
+        SFA_CATALOG_PATH,
+        list_key="semantic_feature_analysis",
+    )
 
 
 def load_action_verb_catalog() -> list[dict]:
-    if not ACTION_VERB_CATALOG_PATH.exists():
-        return []
-
-    raw = json.loads(ACTION_VERB_CATALOG_PATH.read_text(encoding="utf-8"))
-
-    if isinstance(raw, dict):
-        value = raw.get("action_verb_naming", [])
-        if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
-        return []
-
-    if isinstance(raw, list):
-        return [item for item in raw if isinstance(item, dict)]
-
-    return []
+    return _load_catalog_file(
+        ACTION_VERB_CATALOG_PATH,
+        list_key="action_verb_naming",
+    )
 
 
 # =========================================================
@@ -257,6 +300,18 @@ def _get_image_generation_mode(profile: dict) -> str:
     return mode
 
 
+def _profile_interest_fields(profile: dict) -> tuple[str, str]:
+    return profile.get("interests_text", ""), profile.get("avoid_topics_text", "")
+
+
+def _target_label_for_item(item: dict) -> str:
+    return item.get("word", "") or item.get("verb", "") or item.get("sentence", "")
+
+
+def _clamp_difficulty(value: int) -> int:
+    return max(DIFFICULTY_MIN, min(DIFFICULTY_MAX, int(value)))
+
+
 # =========================================================
 # Cue / hint cleaning
 # =========================================================
@@ -272,12 +327,268 @@ def _clean_phonemic_cue(cue: str) -> str:
 
 
 # =========================================================
+# Sentence repetition helpers
+# =========================================================
+
+def _sentence_tokens(text: str | None) -> list[str]:
+    sentence = _clean_sentence(text or "")
+    return re.findall(r"[A-Za-z0-9']+", sentence)
+
+
+def _sentence_word_count(text: str | None) -> int:
+    return len(_sentence_tokens(text))
+
+
+def _normalise_sentence_surface(text: str) -> str:
+    text = _clean_sentence(text)
+    if not text:
+        return ""
+
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"[!?]{2,}", "!", text)
+    text = re.sub(r"\.{2,}", ".", text)
+
+    if text:
+        text = text[0].upper() + text[1:]
+
+    if text and text[-1] not in ".!?":
+        text += "."
+
+    return text
+
+
+def _sentence_effective_level(difficulty: int, sentence_length: int) -> int:
+    return _clamp_difficulty(max(_clamp_difficulty(difficulty), _clamp_difficulty(sentence_length)))
+
+
+def _sentence_constraints(difficulty: int, sentence_length: int) -> dict[str, Any]:
+    effective_level = _sentence_effective_level(difficulty, sentence_length)
+
+    if effective_level == 1:
+        return {
+            "effective_level": 1,
+            "word_min": 4,
+            "word_max": 6,
+            "min_content_words": 2,
+            "length_label": "short",
+            "difficulty_label": "short/simple",
+        }
+
+    if effective_level == 2:
+        return {
+            "effective_level": 2,
+            "word_min": 7,
+            "word_max": 10,
+            "min_content_words": 3,
+            "length_label": "medium",
+            "difficulty_label": "medium/moderate",
+        }
+
+    return {
+        "effective_level": 3,
+        "word_min": 11,
+        "word_max": 14,
+        "min_content_words": 5,
+        "length_label": "long",
+        "difficulty_label": "longer/richer",
+    }
+
+
+def _sentence_examples_for_level(effective_level: int) -> list[str]:
+    if effective_level == 1:
+        return [
+            "The boy kicks the ball.",
+            "A cat sleeps on the sofa.",
+        ]
+    if effective_level == 2:
+        return [
+            "The woman carries groceries into the kitchen.",
+            "A young boy carefully waters the garden plants.",
+        ]
+    return [
+        "The tired father carries two heavy shopping bags into the house.",
+        "A cheerful girl carefully places bright flowers beside the kitchen window.",
+    ]
+
+
+def _derive_targets_from_sentence(sentence: str) -> tuple[list[str], list[str]]:
+    tokens = [_clean_token(token) for token in _sentence_tokens(sentence)]
+    tokens = [token for token in tokens if token]
+
+    content: list[str] = []
+    function: list[str] = []
+    seen_content: set[str] = set()
+    seen_function: set[str] = set()
+
+    for token in tokens:
+        if token in DEFAULT_FUNCTION_WORDS:
+            if token not in seen_function:
+                seen_function.add(token)
+                function.append(token)
+        else:
+            if token not in seen_content:
+                seen_content.add(token)
+                content.append(token)
+
+    return content, function
+
+
+def _sentence_meets_constraints(sentence: str, difficulty: int, sentence_length: int) -> bool:
+    constraints = _sentence_constraints(difficulty, sentence_length)
+    word_count = _sentence_word_count(sentence)
+    content_words, _ = _derive_targets_from_sentence(sentence)
+
+    if word_count < constraints["word_min"] or word_count > constraints["word_max"]:
+        return False
+
+    if len(content_words) < constraints["min_content_words"]:
+        return False
+
+    return True
+
+
+# =========================================================
+# Difficulty helpers
+# =========================================================
+
+def _difficulty_mix_for_level(difficulty: int) -> dict[int, float]:
+    return DIFFICULTY_MIXES.get(_clamp_difficulty(difficulty), DIFFICULTY_MIXES[1])
+
+
+def _difficulty_weighted_order(
+    entries: list[dict],
+    target_difficulty: int,
+    limit: int,
+    key_fn: Callable[[dict], str],
+) -> list[dict]:
+    """
+    Build a bounded progression mix instead of just taking <= difficulty.
+    We keep this deterministic and safe:
+    - take approximate quotas from the target mix
+    - then fill any remaining slots from nearest difficulty bands first
+    """
+    target_difficulty = _clamp_difficulty(target_difficulty)
+    mix = _difficulty_mix_for_level(target_difficulty)
+
+    buckets: dict[int, list[dict]] = {1: [], 2: [], 3: []}
+    for item in entries:
+        level = _clamp_difficulty(_safe_item_difficulty(item))
+        buckets[level].append(item)
+
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def try_add(item: dict) -> bool:
+        key = key_fn(item)
+        if not key or key in seen:
+            return False
+        seen.add(key)
+        out.append(item)
+        return True
+
+    # First pass: take proportional quotas
+    for level, weight in mix.items():
+        target_count = max(0, round(limit * weight))
+        taken = 0
+        for item in buckets.get(level, []):
+            if len(out) >= limit or taken >= target_count:
+                break
+            if try_add(item):
+                taken += 1
+
+    # Second pass: fill remaining from nearest levels first
+    fallback_level_orders = {
+        1: [1, 2, 3],
+        2: [2, 1, 3],
+        3: [3, 2, 1],
+    }
+
+    for level in fallback_level_orders[target_difficulty]:
+        for item in buckets.get(level, []):
+            if len(out) >= limit:
+                return out[:limit]
+            try_add(item)
+
+    return out[:limit]
+
+
+def _sentence_length_band_from_text(text: str | None) -> int:
+    tokens = [token for token in _clean_sentence(text or "").split() if token]
+    length = len(tokens)
+
+    if length <= 6:
+        return 1
+    if length <= 10:
+        return 2
+    return 3
+
+
+def _sentence_length_matches(
+    item: dict,
+    sentence_length: int,
+) -> bool:
+    sentence_length = _clamp_difficulty(sentence_length)
+    label = item.get("english_label") or item.get("sentence") or item.get("id") or ""
+    band = _sentence_length_band_from_text(str(label).replace("_", " "))
+    return band == sentence_length
+
+
+def _difficulty_description_block(technique_id: str, sentence_length: int | None = None, difficulty: int | None = None) -> str:
+    if technique_id in {"image_naming", "naming_with_cues"}:
+        return """
+Difficulty guide:
+- 1 = very common, concrete, visually obvious everyday nouns
+- 2 = everyday nouns with a bit more lexical load, length, or specificity
+- 3 = more specific, longer, lower-frequency but still concrete and imageable nouns
+""".strip()
+
+    if technique_id == "action_verb_naming":
+        return """
+Difficulty guide:
+- 1 = very common, visually obvious everyday actions
+- 2 = everyday actions with a bit more specificity
+- 3 = more specific or less frequent but still clearly imageable actions
+""".strip()
+
+    if technique_id == "semantic_feature_analysis":
+        return """
+Difficulty guide:
+- 1 = highly familiar, easy-to-describe concrete concepts
+- 2 = everyday concepts with slightly more specificity
+- 3 = more specific but still semantically rich and describable concepts
+""".strip()
+
+    effective_level = _sentence_effective_level(difficulty or 1, sentence_length or 1)
+    constraints = _sentence_constraints(difficulty or 1, sentence_length or 1)
+
+    return f"""
+Difficulty guide:
+- 1 = short simple sentences with very common words and simple syntax
+- 2 = medium-length sentences with slightly richer vocabulary
+- 3 = longer sentences with more content words and harder vocabulary
+
+MANDATORY word-count range for this pack:
+- effective sentence level {effective_level}
+- {constraints["word_min"]}-{constraints["word_max"]} words per sentence
+
+This is a hard rule:
+- do not generate any sentence shorter than {constraints["word_min"]} words
+- do not generate any sentence longer than {constraints["word_max"]} words
+
+Richer difficulty means:
+- level 1 = one simple idea only
+- level 2 = one fuller everyday scene with a little more detail
+- level 3 = a clearly richer scene with extra detail such as place, object, description, or added action
+""".strip()
+
+
+# =========================================================
 # Catalog helpers
 # =========================================================
 
 def _safe_item_difficulty(item: dict) -> int:
     try:
-        return int(item.get("difficulty", 1))
+        return _clamp_difficulty(int(item.get("difficulty", 1)))
     except Exception:
         return 1
 
@@ -285,13 +596,11 @@ def _safe_item_difficulty(item: dict) -> int:
 def _catalog_entries_for_technique(
     catalog: list[dict],
     technique_id: str,
-    difficulty: int,
 ) -> list[dict]:
     return [
         item
         for item in catalog
         if item.get("technique") == technique_id
-        and _safe_item_difficulty(item) <= int(difficulty)
         and bool(item.get("keep", True))
     ]
 
@@ -332,6 +641,31 @@ def _filter_catalog_by_interests(
     return preferred, general
 
 
+def _weighted_preferred_then_general(
+    preferred: list[dict],
+    general: list[dict],
+    difficulty: int,
+    limit: int,
+    key_fn: Callable[[dict], str],
+) -> list[dict]:
+    preferred_take = _difficulty_weighted_order(preferred, difficulty, limit, key_fn=key_fn)
+
+    if len(preferred_take) >= limit:
+        return preferred_take[:limit]
+
+    already = {key_fn(item) for item in preferred_take if key_fn(item)}
+    remaining_general = [item for item in general if key_fn(item) not in already]
+
+    general_take = _difficulty_weighted_order(
+        remaining_general,
+        difficulty,
+        limit - len(preferred_take),
+        key_fn=key_fn,
+    )
+
+    return (preferred_take + general_take)[:limit]
+
+
 def _get_image_naming_candidates(
     catalog: list[dict],
     difficulty: int,
@@ -339,23 +673,28 @@ def _get_image_naming_candidates(
     avoid_topics_text: str,
     limit: int = 200,
 ) -> list[str]:
-    entries = _catalog_entries_for_technique(catalog, "image_naming", difficulty)
+    entries = _catalog_entries_for_technique(catalog, "image_naming")
     preferred, general = _filter_catalog_by_interests(entries, interests_text, avoid_topics_text)
 
-    seen = set()
-    words: list[str] = []
+    ordered = _weighted_preferred_then_general(
+        preferred=preferred,
+        general=general,
+        difficulty=difficulty,
+        limit=limit,
+        key_fn=lambda item: _clean_display_word(item.get("word", "")),
+    )
 
-    for pool in (preferred, general):
-        for item in pool:
-            word = _clean_display_word(item.get("word", ""))
-            if not word or word in seen:
-                continue
-            seen.add(word)
-            words.append(word)
-            if len(words) >= limit:
-                return words
+    out: list[str] = []
+    seen: set[str] = set()
 
-    return words
+    for item in ordered:
+        word = _clean_display_word(item.get("word", ""))
+        if not word or word in seen:
+            continue
+        seen.add(word)
+        out.append(word)
+
+    return out[:limit]
 
 
 def _get_naming_with_cues_candidates(
@@ -365,8 +704,8 @@ def _get_naming_with_cues_candidates(
     avoid_topics_text: str,
     limit: int = 200,
 ) -> list[str]:
-    cue_entries = _catalog_entries_for_technique(catalog, "naming_with_cues", difficulty)
-    image_entries = _catalog_entries_for_technique(catalog, "image_naming", difficulty)
+    cue_entries = _catalog_entries_for_technique(catalog, "naming_with_cues")
+    image_entries = _catalog_entries_for_technique(catalog, "image_naming")
 
     preferred_cue, general_cue = _filter_catalog_by_interests(
         cue_entries,
@@ -379,10 +718,25 @@ def _get_naming_with_cues_candidates(
         avoid_topics_text,
     )
 
-    seen = set()
-    words: list[str] = []
+    ordered_cue = _weighted_preferred_then_general(
+        preferred=preferred_cue,
+        general=general_cue,
+        difficulty=difficulty,
+        limit=limit,
+        key_fn=lambda item: _clean_display_word(item.get("word", "")),
+    )
+    ordered_img = _weighted_preferred_then_general(
+        preferred=preferred_img,
+        general=general_img,
+        difficulty=difficulty,
+        limit=limit,
+        key_fn=lambda item: _clean_display_word(item.get("word", "")),
+    )
 
-    for pool in (preferred_cue, general_cue, preferred_img, general_img):
+    words: list[str] = []
+    seen: set[str] = set()
+
+    for pool in (ordered_cue, ordered_img):
         for item in pool:
             word = _clean_display_word(item.get("word", ""))
             if not word or word in seen:
@@ -392,40 +746,52 @@ def _get_naming_with_cues_candidates(
             if len(words) >= limit:
                 return words
 
-    return words
+    return words[:limit]
 
 
 def _get_sentence_candidates(
     catalog: list[dict],
     difficulty: int,
+    sentence_length: int,
     interests_text: str,
     avoid_topics_text: str,
     limit: int = 100,
 ) -> list[dict]:
-    entries = _catalog_entries_for_technique(catalog, "sentence_repetition", difficulty)
+    entries = _catalog_entries_for_technique(catalog, "sentence_repetition")
     preferred, general = _filter_catalog_by_interests(entries, interests_text, avoid_topics_text)
 
+    preferred_matching = [item for item in preferred if _sentence_length_matches(item, sentence_length)]
+    general_matching = [item for item in general if _sentence_length_matches(item, sentence_length)]
+
+    ordered = _weighted_preferred_then_general(
+        preferred=preferred_matching or preferred,
+        general=general_matching or general,
+        difficulty=difficulty,
+        limit=limit,
+        key_fn=lambda item: _norm(item.get("id", "") or item.get("english_label", "")),
+    )
+
     out: list[dict] = []
-    seen = set()
+    seen: set[str] = set()
 
-    for pool in (preferred, general):
-        for item in pool:
-            key = item.get("id")
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            out.append(
-                {
-                    "id": item.get("id"),
-                    "tags": item.get("tags", []),
-                    "english_label": item.get("english_label"),
-                    "image": _image_field(item),
-                }
-            )
-            if len(out) >= limit:
-                return out
+    for item in ordered:
+        key = item.get("id") or item.get("english_label")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            {
+                "id": item.get("id"),
+                "tags": item.get("tags", []),
+                "english_label": item.get("english_label"),
+                "image": _image_field(item),
+                "difficulty": _safe_item_difficulty(item),
+            }
+        )
+        if len(out) >= limit:
+            return out
 
-    return out
+    return out[:limit]
 
 
 def _get_semantic_feature_candidates(
@@ -435,23 +801,30 @@ def _get_semantic_feature_candidates(
     avoid_topics_text: str,
     limit: int = 200,
 ) -> list[dict]:
-    entries = _catalog_entries_for_technique(catalog, "semantic_feature_analysis", difficulty)
+    entries = _catalog_entries_for_technique(catalog, "semantic_feature_analysis")
     preferred, general = _filter_catalog_by_interests(entries, interests_text, avoid_topics_text)
 
+    ordered = _weighted_preferred_then_general(
+        preferred=preferred,
+        general=general,
+        difficulty=difficulty,
+        limit=limit,
+        key_fn=lambda item: _clean_display_word(item.get("word", "")),
+    )
+
     out: list[dict] = []
-    seen = set()
+    seen: set[str] = set()
 
-    for pool in (preferred, general):
-        for item in pool:
-            word = _clean_display_word(item.get("word", ""))
-            if not word or word in seen:
-                continue
-            seen.add(word)
-            out.append(item)
-            if len(out) >= limit:
-                return out
+    for item in ordered:
+        word = _clean_display_word(item.get("word", ""))
+        if not word or word in seen:
+            continue
+        seen.add(word)
+        out.append(item)
+        if len(out) >= limit:
+            return out
 
-    return out
+    return out[:limit]
 
 
 def _get_action_verb_candidates(
@@ -461,23 +834,30 @@ def _get_action_verb_candidates(
     avoid_topics_text: str,
     limit: int = 200,
 ) -> list[dict]:
-    entries = _catalog_entries_for_technique(catalog, "action_verb_naming", difficulty)
+    entries = _catalog_entries_for_technique(catalog, "action_verb_naming")
     preferred, general = _filter_catalog_by_interests(entries, interests_text, avoid_topics_text)
 
+    ordered = _weighted_preferred_then_general(
+        preferred=preferred,
+        general=general,
+        difficulty=difficulty,
+        limit=limit,
+        key_fn=lambda item: _clean_display_word(item.get("verb", "")),
+    )
+
     out: list[dict] = []
-    seen = set()
+    seen: set[str] = set()
 
-    for pool in (preferred, general):
-        for item in pool:
-            verb = _clean_display_word(item.get("verb", ""))
-            if not verb or verb in seen:
-                continue
-            seen.add(verb)
-            out.append(item)
-            if len(out) >= limit:
-                return out
+    for item in ordered:
+        verb = _clean_display_word(item.get("verb", ""))
+        if not verb or verb in seen:
+            continue
+        seen.add(verb)
+        out.append(item)
+        if len(out) >= limit:
+            return out
 
-    return out
+    return out[:limit]
 
 
 def _find_catalog_match_by_word(
@@ -514,13 +894,27 @@ def _pick_catalog_image_strict(
     verb: str | None = None,
     english_label: str | None = None,
 ) -> tuple[str | None, dict | None]:
+    """
+    Keep image matching conservative.
+    We still allow fallback to nearby sources where intended,
+    but we do not open this up too much.
+    """
+    target_difficulty = _clamp_difficulty(difficulty)
+
+    def entries_at_or_below(tech_id: str) -> list[dict]:
+        return [
+            item
+            for item in _catalog_entries_for_technique(catalog, tech_id)
+            if _safe_item_difficulty(item) <= target_difficulty
+        ]
+
     if technique_id == "naming_with_cues":
-        cue_entries = _catalog_entries_for_technique(catalog, "naming_with_cues", difficulty)
+        cue_entries = entries_at_or_below("naming_with_cues")
         image, item = _find_catalog_match_by_word(cue_entries, word=word)
         if image:
             return image, item
 
-        image_entries = _catalog_entries_for_technique(catalog, "image_naming", difficulty)
+        image_entries = entries_at_or_below("image_naming")
         image, item = _find_catalog_match_by_word(image_entries, word=word)
         if image:
             return image, item
@@ -528,21 +922,21 @@ def _pick_catalog_image_strict(
         return None, None
 
     if technique_id == "image_naming":
-        entries = _catalog_entries_for_technique(catalog, "image_naming", difficulty)
+        entries = entries_at_or_below("image_naming")
         return _find_catalog_match_by_word(entries, word=word)
 
     if technique_id == "semantic_feature_analysis":
-        entries = _catalog_entries_for_technique(catalog, "semantic_feature_analysis", difficulty)
+        entries = entries_at_or_below("semantic_feature_analysis")
         image, item = _find_catalog_match_by_word(entries, word=word)
         if image:
             return image, item
 
-        image_entries = _catalog_entries_for_technique(catalog, "image_naming", difficulty)
+        image_entries = entries_at_or_below("image_naming")
         image, item = _find_catalog_match_by_word(image_entries, word=word)
         if image:
             return image, item
 
-        cue_entries = _catalog_entries_for_technique(catalog, "naming_with_cues", difficulty)
+        cue_entries = entries_at_or_below("naming_with_cues")
         image, item = _find_catalog_match_by_word(cue_entries, word=word)
         if image:
             return image, item
@@ -550,11 +944,11 @@ def _pick_catalog_image_strict(
         return None, None
 
     if technique_id == "action_verb_naming":
-        entries = _catalog_entries_for_technique(catalog, "action_verb_naming", difficulty)
+        entries = entries_at_or_below("action_verb_naming")
         return _find_catalog_match_by_word(entries, verb=verb)
 
     if technique_id == "sentence_repetition" and english_label:
-        entries = _catalog_entries_for_technique(catalog, "sentence_repetition", difficulty)
+        entries = entries_at_or_below("sentence_repetition")
         target = _norm(english_label)
 
         for item in entries:
@@ -598,8 +992,8 @@ def build_llm_prompt_for_pack(
     n_items: int,
     catalog: list[dict],
 ) -> str:
-    difficulty = int(profile.get("difficulty", 1))
-    sentence_length = int(profile.get("sentence_length", 1))
+    difficulty = _clamp_difficulty(int(profile.get("difficulty", 1)))
+    sentence_length = _clamp_difficulty(int(profile.get("sentence_length", 1)))
     interests = (profile.get("interests_text", "") or "").strip()
     avoid = (profile.get("avoid_topics_text") or "").strip()
     allow_generated_images = bool(profile.get("allow_generated_images", False))
@@ -631,6 +1025,8 @@ def build_llm_prompt_for_pack(
             else "You MUST choose only from the provided catalog word pool."
         )
 
+        difficulty_block = _difficulty_description_block(technique_id)
+
         if technique_id == "image_naming":
             return f"""
 Return STRICT JSON ONLY (no markdown, no commentary, no extra keys).
@@ -640,6 +1036,8 @@ You are generating personalised image-naming therapy items for a stroke-recovery
 User interests/routine: {interests}
 Avoid topics: {avoid}
 Target difficulty: {difficulty}
+
+{difficulty_block}
 
 Available curated catalog word pool:
 {candidate_preview}
@@ -659,6 +1057,7 @@ Rules:
 - Avoid anything abstract, unsafe, medical, legal, political, upsetting, or confusing.
 - image_prompt must clearly describe one simple recognisable image for the target word.
 - image_prompt should be suitable for a clean therapy exercise image.
+- Keep the pack consistent with the target difficulty.
 - {mode_rule}
 - Output JSON only.
 
@@ -683,6 +1082,8 @@ User interests/routine: {interests}
 Avoid topics: {avoid}
 Target difficulty: {difficulty}
 
+{difficulty_block}
+
 Available curated catalog word pool:
 {candidate_preview}
 
@@ -706,6 +1107,8 @@ Rules:
 - phonemic_cue should give the starting sound, first letter, or first syllable.
 - full_cue must be the exact target word.
 - image_prompt must clearly describe one simple recognisable image for the target word.
+- Keep the pack consistent with the target difficulty.
+- Lower difficulty cues should be more direct. Higher difficulty cues may be a little less direct, but still helpful.
 - {mode_rule}
 - Output JSON only.
 
@@ -738,7 +1141,9 @@ Schema:
             word = item.get("word") or item.get("id")
             tags = ", ".join((item.get("tags") or [])[:6])
             semantic_hint = item.get("semantic_hint") or ""
-            candidate_lines.append(f"- {word}: tags={tags}; hint={semantic_hint}")
+            candidate_lines.append(
+                f"- {word}: difficulty={_safe_item_difficulty(item)}; tags={tags}; hint={semantic_hint}"
+            )
 
         candidate_preview = "\n".join(candidate_lines)
 
@@ -748,6 +1153,8 @@ Schema:
             else "Stay close to the curated target pool."
         )
 
+        difficulty_block = _difficulty_description_block(technique_id)
+
         return f"""
 Return STRICT JSON ONLY (no markdown, no commentary, no extra keys).
 
@@ -756,6 +1163,8 @@ You are generating personalised semantic feature analysis therapy items for a st
 User interests/routine: {interests}
 Avoid topics: {avoid}
 Target difficulty: {difficulty}
+
+{difficulty_block}
 
 Available curated SFA targets:
 {candidate_preview}
@@ -783,6 +1192,7 @@ Rules:
 - semantic_hint should help the user describe or think about the item without giving the answer away too bluntly.
 - feature_prompts should be short, natural prompts suitable for semantic feature analysis.
 - image_prompt must clearly describe one simple recognisable image for the target item.
+- Keep the pack consistent with the target difficulty.
 - {mode_rule}
 - Output JSON only.
 
@@ -816,7 +1226,7 @@ Schema:
             tags = ", ".join((item.get("tags") or [])[:6])
             semantic_hint = item.get("semantic_hint") or ""
             candidate_lines.append(
-                f"- {verb}: subject={subject}; tags={tags}; hint={semantic_hint}"
+                f"- {verb}: difficulty={_safe_item_difficulty(item)}; subject={subject}; tags={tags}; hint={semantic_hint}"
             )
 
         candidate_preview = "\n".join(candidate_lines)
@@ -827,6 +1237,8 @@ Schema:
             else "Stay close to the curated action pool."
         )
 
+        difficulty_block = _difficulty_description_block(technique_id)
+
         return f"""
 Return STRICT JSON ONLY (no markdown, no commentary, no extra keys).
 
@@ -835,6 +1247,8 @@ You are generating personalised action verb naming therapy items for a stroke-re
 User interests/routine: {interests}
 Avoid topics: {avoid}
 Target difficulty: {difficulty}
+
+{difficulty_block}
 
 Available curated action targets:
 {candidate_preview}
@@ -862,6 +1276,7 @@ Rules:
 - The image must make the action obvious, not just show an object linked to the action.
 - Prefer safe, everyday, easy-to-picture actions.
 - Avoid abstract, unsafe, upsetting, medical, legal, political, or confusing actions.
+- Keep the pack consistent with the target difficulty.
 - {mode_rule}
 - Output JSON only.
 
@@ -884,6 +1299,7 @@ Schema:
     sentence_candidates = _get_sentence_candidates(
         catalog=catalog,
         difficulty=difficulty,
+        sentence_length=sentence_length,
         interests_text=interests,
         avoid_topics_text=avoid,
         limit=120,
@@ -893,15 +1309,21 @@ Schema:
     for candidate in sentence_candidates[:40]:
         tags = ", ".join(candidate.get("tags", [])[:6])
         label = candidate.get("english_label") or candidate.get("id")
-        scene_hint_lines.append(f"- {label}: {tags}")
+        scene_hint_lines.append(
+            f"- {label}: difficulty={candidate.get('difficulty', difficulty)}; {tags}"
+        )
 
     scene_hints = "\n".join(scene_hint_lines)
-
-    length_rule = {
-        1: "short (4-6 words)",
-        2: "medium (7-10 words)",
-        3: "long (11-14 words)",
-    }[max(1, min(3, sentence_length))]
+    sentence_constraints = _sentence_constraints(difficulty, sentence_length)
+    difficulty_block = _difficulty_description_block(
+        technique_id,
+        sentence_length=sentence_length,
+        difficulty=difficulty,
+    )
+    sentence_examples = "\n".join(
+        f"- {example}"
+        for example in _sentence_examples_for_level(sentence_constraints["effective_level"])
+    )
 
     mode_rule = (
         "Prefer these curated scene ideas first, but you may invent a closely related new simple scene if useful."
@@ -917,10 +1339,15 @@ You are generating personalised sentence-repetition therapy items for a stroke-r
 User interests/routine: {interests}
 Avoid topics: {avoid}
 Target difficulty: {difficulty}
-Sentence length target: {length_rule}
+Requested sentence length level: {sentence_length}
+
+{difficulty_block}
 
 Curated scene hints:
 {scene_hints}
+
+Correct example style for this pack:
+{sentence_examples}
 
 Rules:
 - Exactly {n_items} items.
@@ -928,7 +1355,19 @@ Rules:
 - Prefer simple action scenes involving people, objects, food, pets, sports, home, travel, hobbies, or routines.
 - Avoid abstract, unsafe, upsetting, political, medical, legal, or confusing content.
 - image_prompt must clearly describe a single scene matching the sentence.
+- Keep the pack consistent with both the target difficulty and the sentence length target.
+- Lower difficulty = simpler vocabulary and syntax.
+- Higher difficulty = longer sentences, more content words, and slightly harder vocabulary.
 - {mode_rule}
+
+CRITICAL SENTENCE RULES:
+- EVERY sentence must be between {sentence_constraints["word_min"]} and {sentence_constraints["word_max"]} words.
+- Do not generate any sentence shorter than {sentence_constraints["word_min"]} words.
+- Do not generate any sentence longer than {sentence_constraints["word_max"]} words.
+- Difficulty 1 must feel short and simple.
+- Difficulty 2 must feel medium and moderately richer.
+- Difficulty 3 must feel clearly longer and richer, with extra scene detail.
+- Reject your own draft internally if it does not match the required word-count range before you output JSON.
 
 Each item must follow:
 {{
@@ -1282,6 +1721,8 @@ def _validate_and_clean_items(
     n_items: int,
 ) -> list[dict]:
     out: list[dict] = []
+    difficulty = _clamp_difficulty(int(profile.get("difficulty", 1)))
+    sentence_length = _clamp_difficulty(int(profile.get("sentence_length", 1)))
 
     for raw in items:
         if not isinstance(raw, dict):
@@ -1412,16 +1853,24 @@ def _validate_and_clean_items(
             )
 
         else:
-            sentence = _clean_sentence(raw.get("sentence", ""))
+            sentence = _normalise_sentence_surface(raw.get("sentence", ""))
             if not sentence:
                 continue
 
-            required_content = _ensure_list_of_tokens(raw.get("required_content", []), max_len=6)
-            required_function = _ensure_list_of_tokens(raw.get("required_function", []), max_len=6)
-            tags = _ensure_list_of_tags(raw.get("tags", []), max_len=8)
-
-            if len(required_content) < 1:
+            if not _sentence_meets_constraints(
+                sentence=sentence,
+                difficulty=difficulty,
+                sentence_length=sentence_length,
+            ):
                 continue
+
+            derived_content, derived_function = _derive_targets_from_sentence(sentence)
+            if len(derived_content) < _sentence_constraints(difficulty, sentence_length)["min_content_words"]:
+                continue
+
+            tags = _ensure_list_of_tags(raw.get("tags", []), max_len=8)
+            if not tags:
+                tags = derived_content[:3]
 
             fallback_prompt = f"A simple clear therapy-style illustration showing: {sentence}"
             image_prompt = _clean_image_prompt(raw.get("image_prompt", ""), fallback_prompt)
@@ -1429,9 +1878,9 @@ def _validate_and_clean_items(
             out.append(
                 {
                     "sentence": sentence,
-                    "required_content": required_content,
-                    "required_function": required_function,
-                    "tags": tags,
+                    "required_content": derived_content[:6],
+                    "required_function": derived_function[:6],
+                    "tags": tags[:8],
                     "image_prompt": image_prompt,
                 }
             )
@@ -1745,6 +2194,7 @@ def _fallback_naming_with_cues_items(
 def _fallback_sentence_items(
     catalog: list[dict],
     difficulty: int,
+    sentence_length: int,
     interests_text: str,
     avoid_topics_text: str,
     n_items: int,
@@ -1752,6 +2202,7 @@ def _fallback_sentence_items(
     entries = _get_sentence_candidates(
         catalog,
         difficulty,
+        sentence_length,
         interests_text,
         avoid_topics_text,
         limit=max(40, n_items * 4),
@@ -1773,20 +2224,31 @@ def _fallback_sentence_items(
         label = (item.get("english_label") or "").strip()
         tags = item.get("tags", [])
 
-        sentence = label.replace("_", " ").strip().capitalize()
-        if sentence and not sentence.endswith("."):
-            sentence += "."
+        sentence = _normalise_sentence_surface(label.replace("_", " ").strip())
+        if not sentence:
+            continue
+
+        if not _sentence_meets_constraints(
+            sentence=sentence,
+            difficulty=difficulty,
+            sentence_length=sentence_length,
+        ):
+            continue
+
+        derived_content, derived_function = _derive_targets_from_sentence(sentence)
+        if not derived_content:
+            continue
 
         out.append(
             {
-                "sentence": sentence or "The person is doing an activity.",
+                "sentence": sentence,
                 "image": image,
-                "required_content": [tag for tag in tags[:3] if _clean_token(tag)],
-                "required_function": ["the"],
-                "tags": tags,
+                "required_content": derived_content[:6],
+                "required_function": derived_function[:6],
+                "tags": tags or derived_content[:3],
                 "source": "catalog",
                 "matched_catalog_id": item.get("id"),
-                "image_prompt": f"A simple clear therapy-style illustration showing: {sentence or 'The person is doing an activity.'}",
+                "image_prompt": f"A simple clear therapy-style illustration showing: {sentence}",
             }
         )
 
@@ -1832,6 +2294,61 @@ def _fallback_action_verb_items(
     return _validate_and_clean_action_verb_items(entries, n_items)
 
 
+def _catalog_filler_items(
+    technique_id: str,
+    catalog: list[dict],
+    difficulty: int,
+    sentence_length: int,
+    interests_text: str,
+    avoid_topics_text: str,
+    n_items: int,
+) -> list[dict]:
+    if technique_id == "image_naming":
+        return _fallback_image_naming_items(
+            catalog=catalog,
+            difficulty=difficulty,
+            interests_text=interests_text,
+            avoid_topics_text=avoid_topics_text,
+            n_items=n_items,
+        )
+
+    if technique_id == "naming_with_cues":
+        return _fallback_naming_with_cues_items(
+            catalog=catalog,
+            difficulty=difficulty,
+            interests_text=interests_text,
+            avoid_topics_text=avoid_topics_text,
+            n_items=n_items,
+        )
+
+    if technique_id == "semantic_feature_analysis":
+        return _fallback_semantic_feature_items(
+            catalog=catalog,
+            difficulty=difficulty,
+            interests_text=interests_text,
+            avoid_topics_text=avoid_topics_text,
+            n_items=n_items,
+        )
+
+    if technique_id == "action_verb_naming":
+        return _fallback_action_verb_items(
+            catalog=catalog,
+            difficulty=difficulty,
+            interests_text=interests_text,
+            avoid_topics_text=avoid_topics_text,
+            n_items=n_items,
+        )
+
+    return _fallback_sentence_items(
+        catalog=catalog,
+        difficulty=difficulty,
+        sentence_length=sentence_length,
+        interests_text=interests_text,
+        avoid_topics_text=avoid_topics_text,
+        n_items=n_items,
+    )
+
+
 def _fill_short_pack_from_catalog(
     cleaned_items: list[dict],
     profile: dict,
@@ -1844,47 +2361,18 @@ def _fill_short_pack_from_catalog(
         return cleaned_items[:n_items]
 
     missing = n_items - len(cleaned_items)
+    interests_text, avoid_topics_text = _profile_interest_fields(profile)
+    sentence_length = _clamp_difficulty(int(profile.get("sentence_length", 1)))
 
-    if technique_id == "image_naming":
-        fillers = _fallback_image_naming_items(
-            catalog=catalog,
-            difficulty=difficulty,
-            interests_text=profile.get("interests_text", ""),
-            avoid_topics_text=profile.get("avoid_topics_text", ""),
-            n_items=max(missing * 3, missing),
-        )
-    elif technique_id == "naming_with_cues":
-        fillers = _fallback_naming_with_cues_items(
-            catalog=catalog,
-            difficulty=difficulty,
-            interests_text=profile.get("interests_text", ""),
-            avoid_topics_text=profile.get("avoid_topics_text", ""),
-            n_items=max(missing * 3, missing),
-        )
-    elif technique_id == "semantic_feature_analysis":
-        fillers = _fallback_semantic_feature_items(
-            catalog=catalog,
-            difficulty=difficulty,
-            interests_text=profile.get("interests_text", ""),
-            avoid_topics_text=profile.get("avoid_topics_text", ""),
-            n_items=max(missing * 3, missing),
-        )
-    elif technique_id == "action_verb_naming":
-        fillers = _fallback_action_verb_items(
-            catalog=catalog,
-            difficulty=difficulty,
-            interests_text=profile.get("interests_text", ""),
-            avoid_topics_text=profile.get("avoid_topics_text", ""),
-            n_items=max(missing * 3, missing),
-        )
-    else:
-        fillers = _fallback_sentence_items(
-            catalog=catalog,
-            difficulty=difficulty,
-            interests_text=profile.get("interests_text", ""),
-            avoid_topics_text=profile.get("avoid_topics_text", ""),
-            n_items=max(missing * 3, missing),
-        )
+    fillers = _catalog_filler_items(
+        technique_id=technique_id,
+        catalog=catalog,
+        difficulty=difficulty,
+        sentence_length=sentence_length,
+        interests_text=interests_text,
+        avoid_topics_text=avoid_topics_text,
+        n_items=max(missing * 3, missing),
+    )
 
     return _extend_with_unique_fillers(
         current_items=cleaned_items,
@@ -1899,27 +2387,12 @@ def _fill_short_pack_from_catalog(
 # =========================================================
 
 def _generated_output_dir(technique_id: str) -> Path:
-    if technique_id == "image_naming":
-        return GENERATED_IMAGE_NAMING_DIR
-    if technique_id == "naming_with_cues":
-        return GENERATED_NAMING_WITH_CUES_DIR
-    if technique_id == "semantic_feature_analysis":
-        return GENERATED_SFA_DIR
-    if technique_id == "action_verb_naming":
-        return GENERATED_ACTION_VERB_DIR
-    return GENERATED_SENTENCE_DIR
+    return TECHNIQUE_OUTPUT_DIRS.get(technique_id, GENERATED_SENTENCE_DIR)
 
 
 def _generated_public_path(technique_id: str, filename: str) -> str:
-    if technique_id == "image_naming":
-        return f"generated/image_naming/{filename}"
-    if technique_id == "naming_with_cues":
-        return f"generated/naming_with_cues/{filename}"
-    if technique_id == "semantic_feature_analysis":
-        return f"generated/semantic_feature_analysis/{filename}"
-    if technique_id == "action_verb_naming":
-        return f"generated/action_verb_naming/{filename}"
-    return f"generated/sentence_repetition/{filename}"
+    base = TECHNIQUE_PUBLIC_DIRS.get(technique_id, "generated/sentence_repetition")
+    return f"{base}/{filename}"
 
 
 def _build_image_generation_prompt(technique_id: str, item: dict) -> str:
@@ -1995,6 +2468,20 @@ def _decode_image_b64_to_file(b64_data: str, output_path: Path) -> None:
     output_path.write_bytes(raw)
 
 
+def _generated_item_stem(item: dict) -> str:
+    return _slugify(
+        item.get("word")
+        or item.get("verb")
+        or item.get("sentence")
+        or "generated_item"
+    )
+
+
+def _local_save_prefix(technique_id: str, stem: str, prompt_hash: str) -> str:
+    base = TECHNIQUE_PUBLIC_DIRS.get(technique_id, "generated/sentence_repetition")
+    return f"{base}/{stem}_{prompt_hash[:10]}"
+
+
 async def _generate_image_with_openai(
     technique_id: str,
     item: dict,
@@ -2010,12 +2497,7 @@ async def _generate_image_with_openai(
         return cached
 
     out_dir = _generated_output_dir(technique_id)
-    stem = _slugify(
-        item.get("word")
-        or item.get("verb")
-        or item.get("sentence")
-        or "generated_item"
-    )
+    stem = _generated_item_stem(item)
     filename = f"{stem}_{prompt_hash[:10]}.png"
     output_path = out_dir / filename
     public_path = _generated_public_path(technique_id, filename)
@@ -2062,23 +2544,8 @@ async def _generate_image_locally(
         print("[LOCAL GEN] using cached image:", cached)
         return cached
 
-    stem = _slugify(
-        item.get("word")
-        or item.get("verb")
-        or item.get("sentence")
-        or "generated_item"
-    )
-
-    if technique_id == "image_naming":
-        save_prefix = f"generated/image_naming/{stem}_{prompt_hash[:10]}"
-    elif technique_id == "naming_with_cues":
-        save_prefix = f"generated/naming_with_cues/{stem}_{prompt_hash[:10]}"
-    elif technique_id == "semantic_feature_analysis":
-        save_prefix = f"generated/semantic_feature_analysis/{stem}_{prompt_hash[:10]}"
-    elif technique_id == "action_verb_naming":
-        save_prefix = f"generated/action_verb_naming/{stem}_{prompt_hash[:10]}"
-    else:
-        save_prefix = f"generated/sentence_repetition/{stem}_{prompt_hash[:10]}"
+    stem = _generated_item_stem(item)
+    save_prefix = _local_save_prefix(technique_id, stem, prompt_hash)
 
     print("[LOCAL GEN] technique:", technique_id)
     print("[LOCAL GEN] stem:", stem)
@@ -2141,6 +2608,24 @@ async def _generate_image_with_selected_method(
 # Row builders
 # =========================================================
 
+def _merge_row_tags(base_tags: list[str], matched_catalog_item: dict | None = None) -> list[str]:
+    tags = base_tags or []
+
+    if not matched_catalog_item or not matched_catalog_item.get("tags"):
+        return tags
+
+    merged_tags: list[str] = []
+    seen = set()
+
+    for tag in list(matched_catalog_item.get("tags") or []) + list(tags):
+        norm_tag = _norm(str(tag))
+        if norm_tag and norm_tag not in seen:
+            seen.add(norm_tag)
+            merged_tags.append(norm_tag)
+
+    return merged_tags or tags
+
+
 def _build_naming_with_cues_row(
     base_item: dict,
     image_path: str,
@@ -2148,19 +2633,7 @@ def _build_naming_with_cues_row(
     matched_catalog_item: dict | None = None,
     generation_method: str | None = None,
 ) -> dict:
-    tags = base_item.get("tags") or []
-
-    if matched_catalog_item and matched_catalog_item.get("tags"):
-        merged_tags: list[str] = []
-        seen = set()
-
-        for tag in list(matched_catalog_item.get("tags") or []) + list(tags):
-            norm_tag = _norm(str(tag))
-            if norm_tag and norm_tag not in seen:
-                seen.add(norm_tag)
-                merged_tags.append(norm_tag)
-
-        tags = merged_tags or tags
+    tags = _merge_row_tags(base_item.get("tags") or [], matched_catalog_item)
 
     semantic_cue_source = (
         (matched_catalog_item.get("semantic_cue") if matched_catalog_item else "")
@@ -2203,19 +2676,7 @@ def _build_semantic_feature_row(
     matched_catalog_item: dict | None = None,
     generation_method: str | None = None,
 ) -> dict:
-    tags = base_item.get("tags") or []
-
-    if matched_catalog_item and matched_catalog_item.get("tags"):
-        merged_tags: list[str] = []
-        seen = set()
-
-        for tag in list(matched_catalog_item.get("tags") or []) + list(tags):
-            norm_tag = _norm(str(tag))
-            if norm_tag and norm_tag not in seen:
-                seen.add(norm_tag)
-                merged_tags.append(norm_tag)
-
-        tags = merged_tags or tags
+    tags = _merge_row_tags(base_item.get("tags") or [], matched_catalog_item)
 
     semantic_hint_source = (
         (matched_catalog_item.get("semantic_hint") if matched_catalog_item else "")
@@ -2253,19 +2714,7 @@ def _build_action_verb_row(
     matched_catalog_item: dict | None = None,
     generation_method: str | None = None,
 ) -> dict:
-    tags = base_item.get("tags") or []
-
-    if matched_catalog_item and matched_catalog_item.get("tags"):
-        merged_tags: list[str] = []
-        seen = set()
-
-        for tag in list(matched_catalog_item.get("tags") or []) + list(tags):
-            norm_tag = _norm(str(tag))
-            if norm_tag and norm_tag not in seen:
-                seen.add(norm_tag)
-                merged_tags.append(norm_tag)
-
-        tags = merged_tags or tags
+    tags = _merge_row_tags(base_item.get("tags") or [], matched_catalog_item)
 
     verb = _clean_display_word(
         (matched_catalog_item.get("verb") if matched_catalog_item else "")
@@ -2324,6 +2773,52 @@ def _build_action_verb_row(
     return row
 
 
+def _build_image_naming_row(
+    base_item: dict,
+    image_path: str,
+    source: str,
+    matched_catalog_item: dict | None = None,
+    generation_method: str | None = None,
+) -> dict:
+    row = {
+        "word": (base_item.get("word") or "").strip(),
+        "image": image_path,
+        "tags": base_item.get("tags") or [],
+        "source": source,
+        "image_prompt": base_item.get("image_prompt", ""),
+        "matched_catalog_id": matched_catalog_item.get("id") if matched_catalog_item else None,
+    }
+
+    if generation_method:
+        row["generation_method"] = generation_method
+
+    return row
+
+
+def _build_sentence_row(
+    base_item: dict,
+    image_path: str,
+    source: str,
+    matched_catalog_item: dict | None = None,
+    generation_method: str | None = None,
+) -> dict:
+    row = {
+        "sentence": (base_item.get("sentence") or "").strip(),
+        "image": image_path,
+        "required_content": base_item.get("required_content") or [],
+        "required_function": base_item.get("required_function") or [],
+        "tags": base_item.get("tags") or [],
+        "source": source,
+        "image_prompt": base_item.get("image_prompt", ""),
+        "matched_catalog_id": matched_catalog_item.get("id") if matched_catalog_item else None,
+    }
+
+    if generation_method:
+        row["generation_method"] = generation_method
+
+    return row
+
+
 # =========================================================
 # Image attachment
 # =========================================================
@@ -2337,13 +2832,15 @@ async def attach_images_to_items(
 ) -> list[dict]:
     out: list[dict] = []
     generation_mode = _get_image_generation_mode(profile)
+    interests_text, avoid_topics_text = _profile_interest_fields(profile)
+    sentence_length = _clamp_difficulty(int(profile.get("sentence_length", 1)))
 
     print("[ATTACH] generation_mode:", generation_mode)
     print("[ATTACH] technique_id:", technique_id)
     print("[ATTACH] item_count:", len(items))
 
     for item in items:
-        target_label = item.get("word", "") or item.get("verb", "") or item.get("sentence", "")
+        target_label = _target_label_for_item(item)
 
         # Action verb naming:
         # 1) try cached/generated first
@@ -2444,14 +2941,12 @@ async def attach_images_to_items(
 
                 if technique_id == "image_naming":
                     out.append(
-                        {
-                            "word": (item.get("word") or "").strip(),
-                            "image": image,
-                            "tags": item.get("tags") or [],
-                            "source": "catalog",
-                            "image_prompt": item.get("image_prompt", ""),
-                            "matched_catalog_id": matched_catalog_item.get("id") if matched_catalog_item else None,
-                        }
+                        _build_image_naming_row(
+                            base_item=item,
+                            image_path=image,
+                            source="catalog",
+                            matched_catalog_item=matched_catalog_item,
+                        )
                     )
                 else:
                     out.append(
@@ -2475,15 +2970,13 @@ async def attach_images_to_items(
                 if gen_image:
                     if technique_id == "image_naming":
                         out.append(
-                            {
-                                "word": (item.get("word") or "").strip(),
-                                "image": gen_image,
-                                "tags": item.get("tags") or [],
-                                "source": "generated",
-                                "generation_method": gen_method,
-                                "image_prompt": item.get("image_prompt", ""),
-                                "matched_catalog_id": None,
-                            }
+                            _build_image_naming_row(
+                                base_item=item,
+                                image_path=gen_image,
+                                source="generated",
+                                matched_catalog_item=None,
+                                generation_method=gen_method,
+                            )
                         )
                     else:
                         out.append(
@@ -2508,16 +3001,12 @@ async def attach_images_to_items(
 
             if image:
                 out.append(
-                    {
-                        "sentence": (item.get("sentence") or "").strip(),
-                        "image": image,
-                        "required_content": item.get("required_content") or [],
-                        "required_function": item.get("required_function") or [],
-                        "tags": item.get("tags") or [],
-                        "source": "catalog",
-                        "image_prompt": item.get("image_prompt", ""),
-                        "matched_catalog_id": matched_catalog_item.get("id") if matched_catalog_item else None,
-                    }
+                    _build_sentence_row(
+                        base_item=item,
+                        image_path=image,
+                        source="catalog",
+                        matched_catalog_item=matched_catalog_item,
+                    )
                 )
                 continue
 
@@ -2530,17 +3019,13 @@ async def attach_images_to_items(
                 )
                 if gen_image:
                     out.append(
-                        {
-                            "sentence": (item.get("sentence") or "").strip(),
-                            "image": gen_image,
-                            "required_content": item.get("required_content") or [],
-                            "required_function": item.get("required_function") or [],
-                            "tags": item.get("tags") or [],
-                            "source": "generated",
-                            "generation_method": gen_method,
-                            "image_prompt": item.get("image_prompt", ""),
-                            "matched_catalog_id": None,
-                        }
+                        _build_sentence_row(
+                            base_item=item,
+                            image_path=gen_image,
+                            source="generated",
+                            matched_catalog_item=None,
+                            generation_method=gen_method,
+                        )
                     )
                     continue
 
@@ -2548,47 +3033,15 @@ async def attach_images_to_items(
         missing = len(items) - len(out)
         print("[ATTACH] unresolved item count:", missing)
 
-        if technique_id == "image_naming":
-            fillers = _fallback_image_naming_items(
-                catalog=catalog,
-                difficulty=difficulty,
-                interests_text=profile.get("interests_text", ""),
-                avoid_topics_text=profile.get("avoid_topics_text", ""),
-                n_items=missing,
-            )
-        elif technique_id == "naming_with_cues":
-            fillers = _fallback_naming_with_cues_items(
-                catalog=catalog,
-                difficulty=difficulty,
-                interests_text=profile.get("interests_text", ""),
-                avoid_topics_text=profile.get("avoid_topics_text", ""),
-                n_items=missing,
-            )
-        elif technique_id == "semantic_feature_analysis":
-            fillers = _fallback_semantic_feature_items(
-                catalog=catalog,
-                difficulty=difficulty,
-                interests_text=profile.get("interests_text", ""),
-                avoid_topics_text=profile.get("avoid_topics_text", ""),
-                n_items=missing,
-            )
-        elif technique_id == "action_verb_naming":
-            fillers = _fallback_action_verb_items(
-                catalog=catalog,
-                difficulty=difficulty,
-                interests_text=profile.get("interests_text", ""),
-                avoid_topics_text=profile.get("avoid_topics_text", ""),
-                n_items=missing,
-            )
-        else:
-            fillers = _fallback_sentence_items(
-                catalog=catalog,
-                difficulty=difficulty,
-                interests_text=profile.get("interests_text", ""),
-                avoid_topics_text=profile.get("avoid_topics_text", ""),
-                n_items=missing,
-            )
-
+        fillers = _catalog_filler_items(
+            technique_id=technique_id,
+            catalog=catalog,
+            difficulty=difficulty,
+            sentence_length=sentence_length,
+            interests_text=interests_text,
+            avoid_topics_text=avoid_topics_text,
+            n_items=missing,
+        )
         out.extend(fillers)
 
     return out[: len(items)]
@@ -2598,19 +3051,21 @@ async def attach_images_to_items(
 # Main pack builder
 # =========================================================
 
+def _load_catalog_for_technique(technique_id: str) -> list[dict]:
+    if technique_id == "semantic_feature_analysis":
+        return load_semantic_feature_catalog()
+    if technique_id == "action_verb_naming":
+        return load_action_verb_catalog()
+    return load_image_catalog()
+
+
 async def build_content_pack(
     profile: dict,
     technique_id: str,
     n_items: int = 10,
 ) -> dict[str, Any]:
-    difficulty = int(profile.get("difficulty", 1))
-
-    if technique_id == "semantic_feature_analysis":
-        catalog = load_semantic_feature_catalog()
-    elif technique_id == "action_verb_naming":
-        catalog = load_action_verb_catalog()
-    else:
-        catalog = load_image_catalog()
+    difficulty = _clamp_difficulty(int(profile.get("difficulty", 1)))
+    catalog = _load_catalog_for_technique(technique_id)
 
     raw_items = generate_pack_items(
         profile=profile,
