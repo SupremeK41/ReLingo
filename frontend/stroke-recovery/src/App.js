@@ -58,26 +58,25 @@ function MainContent() {
           </button>
 
           <SignedOut>
-            <div style={{ marginTop: "12px" }}>
-              <SignInButton mode="modal">
-                <button
-                  id="home-sign-in-trigger"
-                  type="button"
-                  style={{ display: "none" }}
-                  aria-hidden="true"
-                  tabIndex={-1}
-                >
-                  Sign in
-                </button>
-              </SignInButton>
-              <p style={{ margin: 0, opacity: 0.85 }}>
-                Sign in to personalise your exercises and track your progress.
-              </p>
-            </div>
+            <SignInButton mode="modal">
+              <button
+                id="home-sign-in-trigger"
+                type="button"
+                style={{ display: "none" }}
+                aria-hidden="true"
+                tabIndex={-1}
+              >
+                Sign in
+              </button>
+            </SignInButton>
+
+            <p className="cta-helper-text">
+              Sign in to personalise your exercises and track your progress.
+            </p>
           </SignedOut>
 
           <SignedIn>
-            <p style={{ marginTop: "12px", marginBottom: 0, opacity: 0.85 }}>
+            <p className="cta-helper-text">
               Start by setting your preferences, then begin your exercises.
             </p>
           </SignedIn>
@@ -113,23 +112,20 @@ function App() {
         <div
           className="logo-container"
           onClick={handleHomeClick}
-          style={{ cursor: "pointer" }}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
               handleHomeClick();
             }
           }}
         >
           <img src={logo} alt="ReLingo Logo" className="logo" />
-          <h1>ReLingo</h1>
+          <span className="logo-text">ReLingo</span>
         </div>
 
-        <div
-          className="nav-links"
-          style={{ display: "flex", alignItems: "center", gap: 10 }}
-        >
+        <div className="nav-links">
           <button onClick={handleHomeClick} type="button">
             Home
           </button>

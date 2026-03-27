@@ -50,53 +50,72 @@
   align-items: center;
   padding: 1rem 2rem;
   margin-bottom: 4rem;
+  gap: 24px;
 }
 
 .logo-container {
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding-top: 0.5rem;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
 }
 
 .logo {
-  width: 75px;
-  height: 75px;
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
   display: block;
-  margin: auto 0;
+  flex-shrink: 0;
 }
 
-.logo-container h1 {
+.logo-text {
   font-family: 'EB Garamond', serif;
-  font-weight: 600;
-  font-size: 3rem;
+  font-weight: 700;
+  font-size: 2.7rem;
   margin: 0;
   line-height: 1;
-  display: flex;
-  align-items: center;
-  height: 75px;
+  letter-spacing: -0.5px;
+  display: block;
 }
 
 .nav-links {
   display: flex;
-  gap: 20px;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .nav-links button {
   background-color: #1a1a1a;
   color: white;
   border: none;
-  padding: 15px 30px;
+  padding: 14px 24px;
   border-radius: 25px;
   cursor: pointer;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-family: 'EB Garamond', serif;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.nav-links button:hover,
+.cta-button:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
 }
 
 .welcome-text {
   font-size: 4.5rem;
   margin-bottom: 4rem;
   margin-top: -2rem;
+}
+
+.cta-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .cta-button {
@@ -108,7 +127,16 @@
   border-radius: 15px;
   font-size: 2.5rem;
   cursor: pointer;
-  margin: 4rem 0 6rem 0;
+  margin: 4rem 0 1.5rem 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.cta-helper-text {
+  margin: 0;
+  font-size: 1.25rem;
+  opacity: 0.88;
+  max-width: 640px;
+  line-height: 1.35;
 }
 
 .tagline-section {
