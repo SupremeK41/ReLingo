@@ -30,6 +30,7 @@ The system provides:
 The goal is to allow individuals with mild aphasia to perform **regular
 structured therapy sessions independently**, reinforcing language
 recovery outside clinical settings.
+The system integrates AI generation, speech evaluation, and adaptive difficulty into a unified therapy pipeline.
 
 ------------------------------------------------------------------------
 
@@ -117,6 +118,23 @@ Images can be generated dynamically using:
 
 -   OpenAI image generation
 -   ComfyUI (local Stable Diffusion)
+
+------------------------------------------------------------------------
+
+
+# Evaluation Pipeline
+
+ReLingo uses a multi-stage evaluation pipeline:
+
+1. Speech transcription using Whisper
+2. Transcript cleaning and normalisation
+3. Fuzzy matching using:
+   - Levenshtein distance
+   - Double Metaphone phonetic encoding
+   - Morphological tolerance
+4. Scoring based on attempt accuracy and cue usage
+
+This design ensures that **clinically valid near-correct responses are accepted**, rather than relying on strict exact matching.
 
 ------------------------------------------------------------------------
 

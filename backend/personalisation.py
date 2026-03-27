@@ -62,10 +62,7 @@ TECHNIQUE_PUBLIC_DIRS: dict[str, str] = {
 DIFFICULTY_MIN = 1
 DIFFICULTY_MAX = 3
 
-# Bounded pack mixes:
-# 1 -> mostly level 1, a little level 2
-# 2 -> mostly level 2, with some 1 and 3
-# 3 -> mostly level 3, some level 2
+# Mixing difficulty for each level appropriately 
 DIFFICULTY_MIXES: dict[int, dict[int, float]] = {
     1: {1: 0.80, 2: 0.20},
     2: {1: 0.20, 2: 0.60, 3: 0.20},
@@ -503,10 +500,8 @@ def _difficulty_weighted_order(
     key_fn: Callable[[dict], str],
 ) -> list[dict]:
     """
-    Build a bounded progression mix instead of just taking <= difficulty.
-    We keep this deterministic and safe:
-    - take approximate quotas from the target mix
-    - then fill any remaining slots from nearest difficulty bands first
+    Build items in a weighted order based on their difficulty:
+    then fill any remaining slots from nearest difficulty bands first
     """
     target_difficulty = _clamp_difficulty(target_difficulty)
     mix = _difficulty_mix_for_level(target_difficulty)
@@ -948,9 +943,8 @@ def _pick_catalog_image_strict(
     english_label: str | None = None,
 ) -> tuple[str | None, dict | None]:
     """
-    Keep image matching conservative.
-    We still allow fallback to nearby sources where intended,
-    but we do not open this up too much.
+    prefer strict catalog matches for the target word/verb and technique, 
+    but allow limiteed fallback to related techniques for sentence repetition and semantic feature analysis
     """
     target_difficulty = _clamp_difficulty(difficulty)
 
