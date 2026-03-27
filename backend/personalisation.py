@@ -2461,11 +2461,22 @@ def _build_image_generation_prompt(technique_id: str, item: dict) -> str:
         base_prompt = item.get("image_prompt", "")
         return (
             f"{base_prompt} "
-            f"Create a single clear therapy exercise image showing a visible {subject} clearly {verb}. "
-            f"The person or subject must be visibly doing the action with enough body context to make the action obvious. "
-            f"Do not show only an object associated with the action. "
-            f"Use a simple educational illustration style, centered action, uncluttered composition, "
-            f"high recognisability, plain or very clean background, no text, no labels, no watermark."
+            f"Create a single clear therapy exercise image showing a {subject} clearly {verb}. "
+    
+            f"The person must be fully visible with a natural human body. "
+            f"The action must be obvious and clearly shown through body movement. "
+    
+            f"STRICT REQUIREMENTS: "
+            f"- exactly one person only "
+            f"- normal human anatomy "
+            f"- exactly two arms and two legs "
+            f"- no extra limbs, no duplicated body parts "
+            f"- no distorted hands or faces "
+    
+            f"Keep the pose simple, realistic, and easy to understand. "
+    
+            f"Use a simple educational illustration style, centered subject, "
+            f"clean composition, plain background, no text, no labels, no watermark."
         ).strip()
 
     sentence = item.get("sentence", "")
