@@ -1,4 +1,3 @@
-// frontend/src/components/Personalisation.js
 import React, { useEffect, useMemo, useState } from "react";
 import { SignedIn, SignedOut, useAuth } from "@clerk/clerk-react";
 import "../App.css";

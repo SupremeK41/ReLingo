@@ -1,4 +1,3 @@
-// frontend/src/components/BasicSpeech.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@clerk/clerk-react";
 import { useLocation } from "react-router-dom";

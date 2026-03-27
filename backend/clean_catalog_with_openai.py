@@ -20,7 +20,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 BACKEND_DIR = SCRIPT_PATH.parent
 PROJECT_ROOT = BACKEND_DIR.parent
 PUBLIC_DIR = PROJECT_ROOT / "frontend" / "stroke-recovery" / "public"
-DATA_DIR = BACKEND_DIR 
+DATA_DIR = BACKEND_DIR / "data"
 
 INPUT_FILE = PUBLIC_DIR / "image_catalog.json"
 OUTPUT_FILE = DATA_DIR / "therapy_catalog.json"

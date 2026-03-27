@@ -1,4 +1,3 @@
-// frontend/src/components/therapySessionUtils.js
 export const API_BASE = "http://localhost:8000";
 
 export const DEFAULT_NO_SPEECH_PROB_THRESHOLD = 0.8;

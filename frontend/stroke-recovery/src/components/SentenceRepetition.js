@@ -1,4 +1,3 @@
-// frontend/src/components/SentenceRepetition.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import "../App.css";
 import "./BasicSpeech.css";

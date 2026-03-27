@@ -1,4 +1,3 @@
-// frontend/src/components/Progress.js
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { SignedIn, SignedOut, useAuth } from "@clerk/clerk-react";
 import "./Progress.css";
