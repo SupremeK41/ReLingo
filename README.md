@@ -1,5 +1,7 @@
 # ReLingo -- AI-Assisted Speech Therapy for Mild Aphasia
 
+**Project category: university dissertation.** This is my solo academic Master's project, kept separate from Scrimba coursework, independent coding practice and AI-assisted development experiments. See [project context](PROJECT_CONTEXT.md) for its scope and the repository index.
+
 ReLingo is an **AI-assisted speech therapy application designed for
 individuals with mild aphasia**. It provides structured, personalised
 therapy exercises that users can complete **independently without

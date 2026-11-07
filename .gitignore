@@ -22,3 +22,9 @@ temp_audio/
 
 # Node
 node_modules/
+
+# Temporary editor and document lock files
+~$*
+*.tmp
+.DS_Store
+Thumbs.db
